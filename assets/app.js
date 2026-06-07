@@ -22,12 +22,13 @@ const labels = L.tileLayer(
         maxZoom: 23,
         pane: 'overlayPane',
     }
-);
+).addTo(map);
 
 const satelliteToggle = document.getElementById('layer-satellite');
 const labelsToggle = document.getElementById('layer-labels');
 const brightnessInput = document.getElementById('map-brightness');
 const brightnessVal = document.getElementById('brightness-val');
+document.getElementById('map').style.setProperty('--map-brightness', '75%');
 
 satelliteToggle.addEventListener('change', () => {
     satelliteToggle.checked ? map.addLayer(satellite) : map.removeLayer(satellite);
@@ -52,6 +53,8 @@ function saveSettings() {
         exclusionBuffer: document.getElementById('input-exclusion-buffer').value,
         transitionTolerance: document.getElementById('input-transition-tolerance').value,
         skipLanes: document.getElementById('input-skip-lanes').value,
+        targetSpeed: document.getElementById('input-target-speed').value,
+        altitude: document.getElementById('input-altitude').value,
         sweepAuto: document.getElementById('checkbox-sweep-auto').checked,
         sweepAngle: document.getElementById('input-custom-sweep-angle').value,
         perimeterPasses: document.getElementById('input-perimeter-passes').value,
@@ -86,6 +89,8 @@ function loadSettings() {
         }
         if (settings.perimeterPasses !== undefined) document.getElementById('input-perimeter-passes').value = settings.perimeterPasses;
         if (settings.perimeterDirection !== undefined) document.getElementById('select-perimeter-direction').value = settings.perimeterDirection;
+        if (settings.targetSpeed !== undefined) document.getElementById('input-target-speed').value = settings.targetSpeed;
+        if (settings.altitude !== undefined) document.getElementById('input-altitude').value = settings.altitude;
         
         if (settings.layerSatellite !== undefined) {
             satelliteToggle.checked = settings.layerSatellite;
@@ -187,6 +192,8 @@ const zones = {
 };
 let pathLayer     = null;
 let pathWaypoints = null;
+let startMarker   = null;
+let endMarker     = null;
 
 function removeLayerGroup(layers) { layers.forEach(l => map.removeLayer(l)); }
 
@@ -207,7 +214,11 @@ function clearExclusions() {
 
 function clearPath() {
     if (pathLayer) { map.removeLayer(pathLayer); pathLayer = null; }
+    if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+    if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
     pathWaypoints = null;
+    const statsEl = document.getElementById("stats-panel");
+    if (statsEl) statsEl.style.display = "none";
 }
 
 function renderPerimeter(coords, name) {
@@ -388,6 +399,59 @@ document.getElementById('btn-generate').addEventListener('click', () => {
     clearPath();
     pathWaypoints = result.path;
     pathLayer = L.polyline(result.path, PATH_STYLE).addTo(map);
+
+    if (result.path.length > 0) {
+        const startPt = result.path[0];
+        const endPt = result.path[result.path.length - 1];
+
+        startMarker = L.circleMarker(startPt, {
+            radius: 6,
+            fillColor: '#10b981', // green
+            color: '#ffffff',
+            weight: 1.5,
+            fillOpacity: 1
+        }).bindPopup("<b>Start Coverage</b>").addTo(map);
+
+        endMarker = L.circleMarker(endPt, {
+            radius: 6,
+            fillColor: '#ef4444', // red
+            color: '#ffffff',
+            weight: 1.5,
+            fillOpacity: 1
+        }).bindPopup("<b>End Coverage</b>").addTo(map);
+    }
+
+    // Update Floating Statistics Panel
+    const areaSqM = result.coveredAreaSqM;
+    const areaAcres = areaSqM * 0.000247105;
+    const areaVal = areaSqM > 10000
+        ? (areaSqM / 10000).toFixed(2) + " ha"
+        : areaSqM.toLocaleString(undefined, { maximumFractionDigits: 0 }) + " m²";
+    const areaSub = areaAcres.toFixed(2) + " acres";
+    document.getElementById("stat-area").textContent = areaVal;
+    document.getElementById("stat-area-sub").textContent = areaSub;
+
+    const totalDistM = result.totalDistM;
+    const distVal = totalDistM > 1000
+        ? (totalDistM / 1000).toFixed(2) + " km"
+        : totalDistM.toFixed(0) + " m";
+    const distSub = `${result.count} waypoints`;
+    document.getElementById("stat-distance").textContent = distVal;
+    document.getElementById("stat-distance-sub").textContent = distSub;
+
+    const targetSpeed = parseFloat(document.getElementById('input-target-speed').value) || 1.5;
+    const durationSec = totalDistM / targetSpeed;
+    const durationMin = Math.floor(durationSec / 60);
+    const durationSecRem = Math.round(durationSec % 60);
+    const durVal = durationMin > 0 ? `${durationMin}m ${durationSecRem}s` : `${durationSecRem}s`;
+    const durSub = `at ${targetSpeed.toFixed(1)} m/s`;
+    document.getElementById("stat-duration").textContent = durVal;
+    document.getElementById("stat-duration-sub").textContent = durSub;
+
+    const efficiency = totalDistM > 0 ? ((result.sweepDistM / totalDistM) * 100).toFixed(0) + "%" : "0%";
+    document.getElementById("stat-efficiency").textContent = efficiency;
+    document.getElementById("stats-panel").style.display = "block";
+
     syncUI();
 });
 
@@ -395,12 +459,13 @@ document.getElementById('btn-generate').addEventListener('click', () => {
 
 document.getElementById('btn-export').addEventListener('click', () => {
     if (!pathWaypoints) return;
+    const altitude = parseFloat(document.getElementById('input-altitude').value) || 0.0;
     const [hLat, hLon] = pathWaypoints[0];
     const lines = [
         'QGC WPL 110',
-        `0\t1\t0\t16\t0\t0\t0\t0\t${hLat.toFixed(7)}\t${hLon.toFixed(7)}\t0.000000\t1`,
+        `0\t1\t0\t16\t0\t0\t0\t0\t${hLat.toFixed(7)}\t${hLon.toFixed(7)}\t${altitude.toFixed(6)}\t1`,
         ...pathWaypoints.map(([lat, lon], i) =>
-            `${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${lat.toFixed(7)}\t${lon.toFixed(7)}\t0.000000\t1`
+            `${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${lat.toFixed(7)}\t${lon.toFixed(7)}\t${altitude.toFixed(6)}\t1`
         ),
     ];
     const a = Object.assign(document.createElement('a'), {
@@ -414,3 +479,6 @@ document.getElementById('btn-export').addEventListener('click', () => {
 // Load persisted settings and zones on start
 loadSettings();
 loadZones();
+
+document.getElementById('input-target-speed').addEventListener('change', saveSettings);
+document.getElementById('input-altitude').addEventListener('change', saveSettings);

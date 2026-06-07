@@ -913,6 +913,18 @@ function condenseCollinearPoints(pts, tolerance = 0.01) {
     return result;
 }
 
+function getPolygonArea(poly) {
+    if (poly.length < 3) return 0;
+    let area = 0;
+    const N = poly.length;
+    for (let i = 0; i < N; i++) {
+        const [x1, y1] = poly[i];
+        const [x2, y2] = poly[(i + 1) % N];
+        area += x1 * y2 - x2 * y1;
+    }
+    return 0.5 * Math.abs(area);
+}
+
 function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasses = 0, direction = 'CW', tolerance = 0, skipLanes = 0, sweepMode = 'auto', sweepAngle = 0) {
     if (perimCoords.length < 3) return null;
 
@@ -1315,5 +1327,36 @@ function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasse
     }
 
     const path = finalPathMetric.map(([x, y]) => fromLocal(x, y, oLat, oLon));
-    return { path, count: path.length };
+    
+    // Compute total distance
+    let totalDistM = 0;
+    for (let i = 0; i < finalPathMetric.length - 1; i++) {
+        totalDistM += Math.hypot(finalPathMetric[i+1][0] - finalPathMetric[i][0], finalPathMetric[i+1][1] - finalPathMetric[i][1]);
+    }
+
+    // Compute sweep distance (perimeter passes + boustrophedon sweep legs)
+    let perimeterDistM = 0;
+    if (nPasses > 0 && perimeterPathRotated.length > 1) {
+        for (let i = 0; i < perimeterPathRotated.length - 1; i++) {
+            perimeterDistM += Math.hypot(perimeterPathRotated[i+1][0] - perimeterPathRotated[i][0], perimeterPathRotated[i+1][1] - perimeterPathRotated[i][1]);
+        }
+    }
+    const sweepDistM = perimeterDistM + strips.reduce((sum, s) => sum + Math.hypot(s.end[0] - s.start[0], s.end[1] - s.start[1]), 0);
+
+    // Compute covered area
+    let coveredAreaSqM = getPolygonArea(navigablePerimeter);
+    exclusions.forEach((s, idx) => {
+        if (!isIntersecting[idx]) {
+            coveredAreaSqM -= getPolygonArea(exPolys[idx]);
+        }
+    });
+    coveredAreaSqM = Math.max(0, coveredAreaSqM);
+
+    return { 
+        path, 
+        count: path.length, 
+        totalDistM, 
+        sweepDistM, 
+        coveredAreaSqM 
+    };
 }
