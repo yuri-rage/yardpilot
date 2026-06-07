@@ -28,23 +28,89 @@
                     <section class="nav-section">
                         <div class="nav-section-content">
                             <div class="drop-zone" id="drop-perimeter">
-                                <svg class="drop-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <polyline points="14 2 14 8 20 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <line x1="12" y1="18" x2="12" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                                    <polyline points="9 15 12 18 15 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                <svg
+                                    class="drop-icon"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    <path
+                                        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                                        stroke="currentColor"
+                                        stroke-width="1.5"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                    <polyline
+                                        points="14 2 14 8 20 8"
+                                        stroke="currentColor"
+                                        stroke-width="1.5"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                    <line
+                                        x1="12"
+                                        y1="18"
+                                        x2="12"
+                                        y2="12"
+                                        stroke="currentColor"
+                                        stroke-width="1.5"
+                                        stroke-linecap="round"
+                                    />
+                                    <polyline
+                                        points="9 15 12 18 15 15"
+                                        stroke="currentColor"
+                                        stroke-width="1.5"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
                                 </svg>
                                 <span class="drop-label">Perimeter</span>
-                                <span class="drop-hint">.poly or .waypoints</span>
+                                <span class="drop-hint"
+                                    >.poly or .waypoints</span
+                                >
                             </div>
                             <div class="drop-zone" id="drop-exclusion">
-                                <svg class="drop-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <polyline points="14 2 14 8 20 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <line x1="12" y1="18" x2="12" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                                    <polyline points="9 15 12 18 15 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                <svg
+                                    class="drop-icon"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    <path
+                                        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                                        stroke="currentColor"
+                                        stroke-width="1.5"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                    <polyline
+                                        points="14 2 14 8 20 8"
+                                        stroke="currentColor"
+                                        stroke-width="1.5"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                    <line
+                                        x1="12"
+                                        y1="18"
+                                        x2="12"
+                                        y2="12"
+                                        stroke="currentColor"
+                                        stroke-width="1.5"
+                                        stroke-linecap="round"
+                                    />
+                                    <polyline
+                                        points="9 15 12 18 15 15"
+                                        stroke="currentColor"
+                                        stroke-width="1.5"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
                                 </svg>
-                                <span class="drop-label">Exclusion Zone(s)</span>
+                                <span class="drop-label"
+                                    >Exclusion Zone(s)</span
+                                >
                                 <span class="drop-hint">.waypoints</span>
                             </div>
                             <div id="zone-list"></div>
@@ -54,7 +120,7 @@
                         <h3 class="nav-section-title">Lane Settings</h3>
                         <div class="nav-section-content">
                             <label class="input-row">
-                                <span>Lane width (m)</span>
+                                <span>Lane width</span>
                                 <input
                                     id="input-lane-width"
                                     type="number"
@@ -65,7 +131,7 @@
                                 />
                             </label>
                             <label class="input-row">
-                                <span>Exclusion buffer (m)</span>
+                                <span>Exclusion buffer</span>
                                 <input
                                     id="input-exclusion-buffer"
                                     type="number"
@@ -76,7 +142,7 @@
                                 />
                             </label>
                             <label class="input-row">
-                                <span>Transition tolerance (m)</span>
+                                <span>Transition tolerance</span>
                                 <input
                                     id="input-transition-tolerance"
                                     type="number"
@@ -154,7 +220,9 @@
                         <h3 class="nav-section-title">Additional Settings</h3>
                         <div class="nav-section-content">
                             <label class="input-row">
-                                <span>Target speed (m/s)</span>
+                                <span id="label-target-speed"
+                                    >Target speed (m/s)</span
+                                >
                                 <input
                                     id="input-target-speed"
                                     type="number"
@@ -165,7 +233,7 @@
                                 />
                             </label>
                             <label class="input-row">
-                                <span>Altitude (m)</span>
+                                <span id="label-altitude">Altitude (m)</span>
                                 <input
                                     id="input-altitude"
                                     type="number"
@@ -184,12 +252,49 @@
                                 id="btn-generate"
                                 disabled
                             >
-                                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <circle cx="6" cy="18" r="2" stroke="currentColor" stroke-width="1.6"/>
-                                    <circle cx="18" cy="6" r="2" stroke="currentColor" stroke-width="1.6"/>
-                                    <circle cx="18" cy="18" r="2" stroke="currentColor" stroke-width="1.6"/>
-                                    <path d="M8 18h4a4 4 0 0 0 4-4V8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <line x1="18" y1="6" x2="18" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                                <svg
+                                    class="btn-icon"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    <circle
+                                        cx="6"
+                                        cy="18"
+                                        r="2"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                    />
+                                    <circle
+                                        cx="18"
+                                        cy="6"
+                                        r="2"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                    />
+                                    <circle
+                                        cx="18"
+                                        cy="18"
+                                        r="2"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                    />
+                                    <path
+                                        d="M8 18h4a4 4 0 0 0 4-4V8"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                    <line
+                                        x1="18"
+                                        y1="6"
+                                        x2="18"
+                                        y2="8"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                    />
                                 </svg>
                                 Generate Path
                             </button>
@@ -198,10 +303,35 @@
                                 id="btn-export"
                                 disabled
                             >
-                                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <polyline points="7 10 12 15 17 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                                <svg
+                                    class="btn-icon"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    <path
+                                        d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                    <polyline
+                                        points="7 10 12 15 17 10"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                    <line
+                                        x1="12"
+                                        y1="15"
+                                        x2="12"
+                                        y2="3"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                    />
                                 </svg>
                                 Export Waypoints
                             </button>
@@ -257,9 +387,6 @@
                         <span>Labels</span>
                         <input type="checkbox" id="layer-labels" checked />
                     </label>
-                    <h4 class="card-title" style="margin-top: 10px">
-                        Appearance
-                    </h4>
                     <div class="control-row">
                         <div class="control-header">
                             <span>Brightness</span>
@@ -272,6 +399,23 @@
                             max="150"
                             value="75"
                         />
+                    </div>
+                    <h4 class="card-title" style="margin-top: 10px">Units</h4>
+                    <div class="units-toggle" id="units-toggle">
+                        <button
+                            class="units-btn active"
+                            id="units-metric"
+                            data-units="metric"
+                        >
+                            Metric
+                        </button>
+                        <button
+                            class="units-btn"
+                            id="units-imperial"
+                            data-units="imperial"
+                        >
+                            Imperial
+                        </button>
                     </div>
                 </div>
             </main>

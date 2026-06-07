@@ -45,25 +45,148 @@ brightnessInput.addEventListener('input', (e) => {
     saveSettings();
 });
 
+// ── Unit conversion constants ─────────────────────────────
+
+const FT_PER_M   = 3.28084;
+const MPH_PER_MS = 2.23694;
+const M_PER_FT   = 1 / FT_PER_M;
+const MS_PER_MPH = 1 / MPH_PER_MS;
+
+// Current unit mode — 'metric' | 'imperial'
+let currentUnits = 'metric';
+
+function isImperial() { return currentUnits === 'imperial'; }
+
+// Convert a stored metric value → display value
+function toDisplay(metricVal, type) {
+    if (!isImperial()) return metricVal;
+    if (type === 'length') return Math.round(metricVal * FT_PER_M * 100) / 100;   // 2 dp in ft
+    if (type === 'speed')  return Math.round(metricVal * MPH_PER_MS * 100) / 100; // 2 dp in mph
+    return metricVal;
+}
+
+// Convert a display value → metric storage value
+function toMetric(displayVal, type) {
+    if (!isImperial()) return displayVal;
+    if (type === 'length') return displayVal * M_PER_FT;
+    if (type === 'speed')  return displayVal * MS_PER_MPH;
+    return displayVal;
+}
+
+// ── Unit-aware input helpers ──────────────────────────────
+
+// Configuration for each unit-sensitive numeric input:
+//   type          – 'length' | 'speed'
+//   step_m        – step when metric
+//   step_ft / step_mph – step when imperial
+//   decimals_m    – display decimal places when metric
+//   decimals_imp  – display decimal places when imperial
+const UNIT_INPUTS = {
+    //                                              step_m  step_imp  dec_m  dec_imp
+    'input-lane-width':           { type:'length', step_m:0.1,  step_imp:0.5,  dec_m:1, dec_imp:1, labelEl:null,                metricLabel:'Lane width (m)',          imperialLabel:'Lane width (ft)'          },
+    'input-exclusion-buffer':     { type:'length', step_m:0.1,  step_imp:0.5,  dec_m:1, dec_imp:1, labelEl:null,                metricLabel:'Exclusion buffer (m)',     imperialLabel:'Exclusion buffer (ft)'     },
+    'input-transition-tolerance': { type:'length', step_m:0.05, step_imp:0.1,  dec_m:2, dec_imp:2, labelEl:null,                metricLabel:'Transition tolerance (m)', imperialLabel:'Transition tolerance (ft)' },
+    'input-target-speed':         { type:'speed',  step_m:0.1,  step_imp:0.1,  dec_m:1, dec_imp:1, labelEl:'label-target-speed', metricLabel:'Target speed (m/s)',       imperialLabel:'Target speed (mph)'       },
+    'input-altitude':             { type:'length', step_m:0.5,  step_imp:5,    dec_m:1, dec_imp:0, labelEl:'label-altitude',    metricLabel:'Altitude (m)',             imperialLabel:'Altitude (ft)'            },
+};
+
+// Read the raw metric value from a unit-sensitive input (using current unit mode)
+function getMetricValue(id) {
+    const cfg = UNIT_INPUTS[id];
+    const raw = parseFloat(document.getElementById(id).value) || 0;
+    return toMetric(raw, cfg.type);
+}
+
+// Snapshot all unit-sensitive inputs as metric values from the DOM right now
+function snapshotMetricValues() {
+    const snap = {};
+    for (const id of Object.keys(UNIT_INPUTS)) {
+        snap[id] = getMetricValue(id);
+    }
+    return snap;
+}
+
+// Set the display value of a unit-sensitive input from a metric value
+function setDisplayValue(id, metricVal) {
+    const cfg = UNIT_INPUTS[id];
+    const displayVal = toDisplay(metricVal, cfg.type);
+    const decimals = isImperial() ? cfg.dec_imp : cfg.dec_m;
+    document.getElementById(id).value = parseFloat(displayVal.toFixed(decimals));
+}
+
+// Refresh all unit-aware inputs: convert displayed values and update labels/steps.
+// metricSnapshot is an optional {id: metricVal} map taken BEFORE currentUnits changed.
+function applyUnitsToInputs(metricSnapshot) {
+    for (const [id, cfg] of Object.entries(UNIT_INPUTS)) {
+        const el = document.getElementById(id);
+        // Use snapshot if provided, otherwise convert current display back to metric
+        const metricVal = metricSnapshot
+            ? metricSnapshot[id]
+            : getStoredMetricValue(id);
+        const displayVal = toDisplay(metricVal, cfg.type);
+        const decimals   = isImperial() ? cfg.dec_imp : cfg.dec_m;
+        el.value = parseFloat(displayVal.toFixed(decimals));
+        el.step  = isImperial() ? cfg.step_imp : cfg.step_m;
+
+        // Update label
+        const labelText = isImperial() ? cfg.imperialLabel : cfg.metricLabel;
+        if (cfg.labelEl) {
+            document.getElementById(cfg.labelEl).textContent = labelText;
+        } else {
+            const parent = el.closest('label') || el.parentElement;
+            const span = parent ? parent.querySelector('span') : null;
+            if (span) span.textContent = labelText;
+        }
+    }
+}
+
 // ── LocalStorage persistence ─────────────────────────────
 
+// Settings are always stored in METRIC regardless of current unit mode.
 function saveSettings() {
     const settings = {
-        laneWidth: document.getElementById('input-lane-width').value,
-        exclusionBuffer: document.getElementById('input-exclusion-buffer').value,
-        transitionTolerance: document.getElementById('input-transition-tolerance').value,
-        skipLanes: document.getElementById('input-skip-lanes').value,
-        targetSpeed: document.getElementById('input-target-speed').value,
-        altitude: document.getElementById('input-altitude').value,
-        sweepAuto: document.getElementById('checkbox-sweep-auto').checked,
-        sweepAngle: document.getElementById('input-custom-sweep-angle').value,
-        perimeterPasses: document.getElementById('input-perimeter-passes').value,
-        perimeterDirection: document.getElementById('select-perimeter-direction').value,
-        layerSatellite: satelliteToggle.checked,
-        layerLabels: labelsToggle.checked,
-        mapBrightness: brightnessInput.value
+        laneWidth:           getMetricValue('input-lane-width'),
+        exclusionBuffer:     getMetricValue('input-exclusion-buffer'),
+        transitionTolerance: getMetricValue('input-transition-tolerance'),
+        skipLanes:           parseInt(document.getElementById('input-skip-lanes').value) || 0,
+        targetSpeed:         getMetricValue('input-target-speed'),
+        altitude:            getMetricValue('input-altitude'),
+        sweepAuto:           document.getElementById('checkbox-sweep-auto').checked,
+        sweepAngle:          document.getElementById('input-custom-sweep-angle').value,
+        perimeterPasses:     document.getElementById('input-perimeter-passes').value,
+        perimeterDirection:  document.getElementById('select-perimeter-direction').value,
+        layerSatellite:      satelliteToggle.checked,
+        layerLabels:         labelsToggle.checked,
+        mapBrightness:       brightnessInput.value,
+        units:               currentUnits,
     };
     localStorage.setItem('yardpilot_settings', JSON.stringify(settings));
+}
+
+// Return the stored METRIC value for a unit-sensitive input (from localStorage)
+function getStoredMetricValue(id) {
+    const data = localStorage.getItem('yardpilot_settings');
+    if (!data) {
+        // Fall back to converting the current display value back to metric
+        const cfg = UNIT_INPUTS[id];
+        const raw = parseFloat(document.getElementById(id).value) || 0;
+        return toMetric(raw, cfg.type);
+    }
+    try {
+        const settings = JSON.parse(data);
+        const keyMap = {
+            'input-lane-width':           'laneWidth',
+            'input-exclusion-buffer':     'exclusionBuffer',
+            'input-transition-tolerance': 'transitionTolerance',
+            'input-target-speed':         'targetSpeed',
+            'input-altitude':             'altitude',
+        };
+        const key = keyMap[id];
+        if (key !== undefined && settings[key] !== undefined) return parseFloat(settings[key]);
+    } catch(e) {}
+    const cfg = UNIT_INPUTS[id];
+    const raw = parseFloat(document.getElementById(id).value) || 0;
+    return toMetric(raw, cfg.type);
 }
 
 function loadSettings() {
@@ -71,27 +194,37 @@ function loadSettings() {
     if (!data) return;
     try {
         const settings = JSON.parse(data);
-        if (settings.laneWidth !== undefined) document.getElementById('input-lane-width').value = settings.laneWidth;
-        if (settings.exclusionBuffer !== undefined) document.getElementById('input-exclusion-buffer').value = settings.exclusionBuffer;
-        if (settings.transitionTolerance !== undefined) document.getElementById('input-transition-tolerance').value = settings.transitionTolerance;
+
+        // Restore unit mode first so conversions are correct
+        if (settings.units) {
+            currentUnits = settings.units;
+            document.getElementById('units-metric').classList.toggle('active', currentUnits === 'metric');
+            document.getElementById('units-imperial').classList.toggle('active', currentUnits === 'imperial');
+        }
+
+        // Restore metric values, display in current unit
+        if (settings.laneWidth           !== undefined) setDisplayValue('input-lane-width',           settings.laneWidth);
+        if (settings.exclusionBuffer     !== undefined) setDisplayValue('input-exclusion-buffer',     settings.exclusionBuffer);
+        if (settings.transitionTolerance !== undefined) setDisplayValue('input-transition-tolerance', settings.transitionTolerance);
+        if (settings.targetSpeed         !== undefined) setDisplayValue('input-target-speed',         settings.targetSpeed);
+        if (settings.altitude            !== undefined) setDisplayValue('input-altitude',             settings.altitude);
+
         if (settings.skipLanes !== undefined) document.getElementById('input-skip-lanes').value = settings.skipLanes;
         if (settings.sweepAuto !== undefined) {
             const autoCheckbox = document.getElementById('checkbox-sweep-auto');
-            const angleSlider = document.getElementById('input-custom-sweep-angle');
-            const angleRow = document.getElementById('row-custom-sweep-angle');
-            autoCheckbox.checked = settings.sweepAuto;
-            angleSlider.disabled = settings.sweepAuto;
-            angleRow.style.opacity = settings.sweepAuto ? '0.35' : '1.0';
+            const angleSlider  = document.getElementById('input-custom-sweep-angle');
+            const angleRow     = document.getElementById('row-custom-sweep-angle');
+            autoCheckbox.checked      = settings.sweepAuto;
+            angleSlider.disabled      = settings.sweepAuto;
+            angleRow.style.opacity    = settings.sweepAuto ? '0.35' : '1.0';
         }
         if (settings.sweepAngle !== undefined) {
             document.getElementById('input-custom-sweep-angle').value = settings.sweepAngle;
             document.getElementById('sweep-angle-val').textContent = `${settings.sweepAngle}°`;
         }
-        if (settings.perimeterPasses !== undefined) document.getElementById('input-perimeter-passes').value = settings.perimeterPasses;
+        if (settings.perimeterPasses    !== undefined) document.getElementById('input-perimeter-passes').value   = settings.perimeterPasses;
         if (settings.perimeterDirection !== undefined) document.getElementById('select-perimeter-direction').value = settings.perimeterDirection;
-        if (settings.targetSpeed !== undefined) document.getElementById('input-target-speed').value = settings.targetSpeed;
-        if (settings.altitude !== undefined) document.getElementById('input-altitude').value = settings.altitude;
-        
+
         if (settings.layerSatellite !== undefined) {
             satelliteToggle.checked = settings.layerSatellite;
             settings.layerSatellite ? map.addLayer(satellite) : map.removeLayer(satellite);
@@ -105,10 +238,42 @@ function loadSettings() {
             brightnessVal.textContent = `${settings.mapBrightness}%`;
             document.getElementById('map').style.setProperty('--map-brightness', `${settings.mapBrightness}%`);
         }
+
+        // Apply labels and steps to all unit inputs
+        applyUnitsToInputs();
+
     } catch (e) {
         console.error('Failed to load settings', e);
     }
 }
+
+// ── Units toggle wiring ───────────────────────────────────
+
+document.getElementById('units-metric').addEventListener('click', () => {
+    if (currentUnits === 'metric') return;
+    // Snapshot metric values from DOM before changing mode
+    const snap = snapshotMetricValues();
+    currentUnits = 'metric';
+    document.getElementById('units-metric').classList.add('active');
+    document.getElementById('units-imperial').classList.remove('active');
+    applyUnitsToInputs(snap);
+    saveSettings();
+    if (lastResult) displayStats(lastResult);
+});
+
+document.getElementById('units-imperial').addEventListener('click', () => {
+    if (currentUnits === 'imperial') return;
+    // Snapshot metric values from DOM before changing mode
+    const snap = snapshotMetricValues();
+    currentUnits = 'imperial';
+    document.getElementById('units-metric').classList.remove('active');
+    document.getElementById('units-imperial').classList.add('active');
+    applyUnitsToInputs(snap);
+    saveSettings();
+    if (lastResult) displayStats(lastResult);
+});
+
+// ── Zone state ────────────────────────────────────────────
 
 function saveZones() {
     const data = {
@@ -163,9 +328,9 @@ settingInputs.forEach(id => {
 });
 
 // Update slider state dynamically when checkbox is toggled
-const sweepAutoCheckbox = document.getElementById('checkbox-sweep-auto');
-const sweepAngleInput = document.getElementById('input-custom-sweep-angle');
-const sweepAngleVal = document.getElementById('sweep-angle-val');
+const sweepAutoCheckbox  = document.getElementById('checkbox-sweep-auto');
+const sweepAngleInput    = document.getElementById('input-custom-sweep-angle');
+const sweepAngleVal      = document.getElementById('sweep-angle-val');
 const customSweepAngleRow = document.getElementById('row-custom-sweep-angle');
 
 sweepAutoCheckbox.addEventListener('change', (e) => {
@@ -194,6 +359,8 @@ let pathLayer     = null;
 let pathWaypoints = null;
 let startMarker   = null;
 let endMarker     = null;
+// Store last result so stats can be refreshed when units change
+let lastResult    = null;
 
 function removeLayerGroup(layers) { layers.forEach(l => map.removeLayer(l)); }
 
@@ -213,12 +380,13 @@ function clearExclusions() {
 }
 
 function clearPath() {
-    if (pathLayer) { map.removeLayer(pathLayer); pathLayer = null; }
+    if (pathLayer)   { map.removeLayer(pathLayer);   pathLayer   = null; }
     if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
-    if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
+    if (endMarker)   { map.removeLayer(endMarker);   endMarker   = null; }
     pathWaypoints = null;
-    const statsEl = document.getElementById("stats-panel");
-    if (statsEl) statsEl.style.display = "none";
+    lastResult    = null;
+    const statsEl = document.getElementById('stats-panel');
+    if (statsEl) statsEl.style.display = 'none';
 }
 
 function renderPerimeter(coords, name) {
@@ -378,22 +546,95 @@ function setupDropZone(el, type, accept) {
 setupDropZone(document.getElementById('drop-perimeter'), 'perimeter', '.poly,.waypoints');
 setupDropZone(document.getElementById('drop-exclusion'), 'exclusion',  '.waypoints');
 
+// ── Stats display (unit-aware) ────────────────────────────
+
+function displayStats(result) {
+    if (!result) return;
+    lastResult = result;
+
+    const areaSqM    = result.coveredAreaSqM;
+    const totalDistM = result.totalDistM;
+    // Speed is always read back as metric from storage
+    const speedMS = getStoredMetricValue('input-target-speed') || 1.5;
+
+    if (isImperial()) {
+        // Area: sq ft, and sq miles as sub
+        const areaSqFt    = areaSqM * 10.7639;
+        const areaSqMiles = areaSqM * 3.861e-7;
+        const areaVal = areaSqFt > 1e6
+            ? (areaSqMiles).toFixed(4) + ' mi²'
+            : areaSqFt.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' ft²';
+        const areaSub = (areaSqM * 0.000247105).toFixed(3) + ' acres';
+        document.getElementById('stat-area').textContent    = areaVal;
+        document.getElementById('stat-area-sub').textContent = areaSub;
+
+        // Distance: miles
+        const distMiles = totalDistM * 0.000621371;
+        const distVal = distMiles >= 0.1
+            ? distMiles.toFixed(3) + ' mi'
+            : (totalDistM * FT_PER_M).toFixed(0) + ' ft';
+        document.getElementById('stat-distance').textContent    = distVal;
+        document.getElementById('stat-distance-sub').textContent = `${result.count} waypoints`;
+
+        // Duration: uses m/s internally
+        const durationSec = totalDistM / speedMS;
+        const durationMin = Math.floor(durationSec / 60);
+        const durationSecRem = Math.round(durationSec % 60);
+        const durVal = durationMin > 0 ? `${durationMin}m ${durationSecRem}s` : `${durationSecRem}s`;
+        const speedMph = speedMS * MPH_PER_MS;
+        document.getElementById('stat-duration').textContent    = durVal;
+        document.getElementById('stat-duration-sub').textContent = `at ${speedMph.toFixed(1)} mph`;
+    } else {
+        // Metric display
+        const areaVal = areaSqM > 10000
+            ? (areaSqM / 10000).toFixed(2) + ' ha'
+            : areaSqM.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' m²';
+        const areaSub = (areaSqM * 0.000247105).toFixed(2) + ' acres';
+        document.getElementById('stat-area').textContent    = areaVal;
+        document.getElementById('stat-area-sub').textContent = areaSub;
+
+        const distVal = totalDistM > 1000
+            ? (totalDistM / 1000).toFixed(2) + ' km'
+            : totalDistM.toFixed(0) + ' m';
+        document.getElementById('stat-distance').textContent    = distVal;
+        document.getElementById('stat-distance-sub').textContent = `${result.count} waypoints`;
+
+        const durationSec    = totalDistM / speedMS;
+        const durationMin    = Math.floor(durationSec / 60);
+        const durationSecRem = Math.round(durationSec % 60);
+        const durVal = durationMin > 0 ? `${durationMin}m ${durationSecRem}s` : `${durationSecRem}s`;
+        document.getElementById('stat-duration').textContent    = durVal;
+        document.getElementById('stat-duration-sub').textContent = `at ${speedMS.toFixed(1)} m/s`;
+    }
+
+    const efficiency = totalDistM > 0
+        ? ((result.sweepDistM / totalDistM) * 100).toFixed(0) + '%'
+        : '0%';
+    document.getElementById('stat-efficiency').textContent = efficiency;
+    document.getElementById('stats-panel').style.display = 'block';
+}
+
 // ── Path generation ───────────────────────────────────────
 
 document.getElementById('btn-generate').addEventListener('click', () => {
     if (!zones.perimeter) return;
-    const laneWidth = parseFloat(document.getElementById('input-lane-width').value)       || 2;
-    const buffer    = parseFloat(document.getElementById('input-exclusion-buffer').value) || 1;
-    const tolerance = parseFloat(document.getElementById('input-transition-tolerance').value) || 0;
-    const skipLanes = parseInt(document.getElementById('input-skip-lanes').value)         || 0;
-    const sweepAuto = document.getElementById('checkbox-sweep-auto').checked;
-    const sweepMode = sweepAuto ? 'auto' : 'custom';
-    const sweepAngle = parseFloat(document.getElementById('input-custom-sweep-angle').value) || 0;
-    const nPasses   = parseInt(document.getElementById('input-perimeter-passes').value)   || 0;
-    const direction = document.getElementById('select-perimeter-direction').value         || 'CW';
-    const allShapes = zones.exclusions.flatMap(z => z.shapes);
 
-    const result = generateCoveragePath(zones.perimeter.coords, allShapes, laneWidth, buffer, nPasses, direction, tolerance, skipLanes, sweepMode, sweepAngle);
+    // All values retrieved as metric regardless of display unit
+    const laneWidth = getMetricValue('input-lane-width')           || 1.2;
+    const buffer    = getMetricValue('input-exclusion-buffer')     || 1.0;
+    const tolerance = getMetricValue('input-transition-tolerance') || 0;
+    const skipLanes = parseInt(document.getElementById('input-skip-lanes').value) || 0;
+    const sweepAuto  = document.getElementById('checkbox-sweep-auto').checked;
+    const sweepMode  = sweepAuto ? 'auto' : 'custom';
+    const sweepAngle = parseFloat(document.getElementById('input-custom-sweep-angle').value) || 0;
+    const nPasses    = parseInt(document.getElementById('input-perimeter-passes').value) || 0;
+    const direction  = document.getElementById('select-perimeter-direction').value || 'CW';
+    const allShapes  = zones.exclusions.flatMap(z => z.shapes);
+
+    const result = generateCoveragePath(
+        zones.perimeter.coords, allShapes,
+        laneWidth, buffer, nPasses, direction, tolerance, skipLanes, sweepMode, sweepAngle
+    );
     if (!result) return;
 
     clearPath();
@@ -402,56 +643,18 @@ document.getElementById('btn-generate').addEventListener('click', () => {
 
     if (result.path.length > 0) {
         const startPt = result.path[0];
-        const endPt = result.path[result.path.length - 1];
+        const endPt   = result.path[result.path.length - 1];
 
         startMarker = L.circleMarker(startPt, {
-            radius: 6,
-            fillColor: '#10b981', // green
-            color: '#ffffff',
-            weight: 1.5,
-            fillOpacity: 1
-        }).bindPopup("<b>Start Coverage</b>").addTo(map);
+            radius: 6, fillColor: '#10b981', color: '#ffffff', weight: 1.5, fillOpacity: 1
+        }).bindPopup('<b>Start Coverage</b>').addTo(map);
 
         endMarker = L.circleMarker(endPt, {
-            radius: 6,
-            fillColor: '#ef4444', // red
-            color: '#ffffff',
-            weight: 1.5,
-            fillOpacity: 1
-        }).bindPopup("<b>End Coverage</b>").addTo(map);
+            radius: 6, fillColor: '#ef4444', color: '#ffffff', weight: 1.5, fillOpacity: 1
+        }).bindPopup('<b>End Coverage</b>').addTo(map);
     }
 
-    // Update Floating Statistics Panel
-    const areaSqM = result.coveredAreaSqM;
-    const areaAcres = areaSqM * 0.000247105;
-    const areaVal = areaSqM > 10000
-        ? (areaSqM / 10000).toFixed(2) + " ha"
-        : areaSqM.toLocaleString(undefined, { maximumFractionDigits: 0 }) + " m²";
-    const areaSub = areaAcres.toFixed(2) + " acres";
-    document.getElementById("stat-area").textContent = areaVal;
-    document.getElementById("stat-area-sub").textContent = areaSub;
-
-    const totalDistM = result.totalDistM;
-    const distVal = totalDistM > 1000
-        ? (totalDistM / 1000).toFixed(2) + " km"
-        : totalDistM.toFixed(0) + " m";
-    const distSub = `${result.count} waypoints`;
-    document.getElementById("stat-distance").textContent = distVal;
-    document.getElementById("stat-distance-sub").textContent = distSub;
-
-    const targetSpeed = parseFloat(document.getElementById('input-target-speed').value) || 1.5;
-    const durationSec = totalDistM / targetSpeed;
-    const durationMin = Math.floor(durationSec / 60);
-    const durationSecRem = Math.round(durationSec % 60);
-    const durVal = durationMin > 0 ? `${durationMin}m ${durationSecRem}s` : `${durationSecRem}s`;
-    const durSub = `at ${targetSpeed.toFixed(1)} m/s`;
-    document.getElementById("stat-duration").textContent = durVal;
-    document.getElementById("stat-duration-sub").textContent = durSub;
-
-    const efficiency = totalDistM > 0 ? ((result.sweepDistM / totalDistM) * 100).toFixed(0) + "%" : "0%";
-    document.getElementById("stat-efficiency").textContent = efficiency;
-    document.getElementById("stats-panel").style.display = "block";
-
+    displayStats(result);
     syncUI();
 });
 
@@ -459,18 +662,19 @@ document.getElementById('btn-generate').addEventListener('click', () => {
 
 document.getElementById('btn-export').addEventListener('click', () => {
     if (!pathWaypoints) return;
-    const altitude = parseFloat(document.getElementById('input-altitude').value) || 0.0;
+    // Altitude is always exported in meters — convert from display unit to metric
+    const altitudeM = getMetricValue('input-altitude') || 0.0;
     const [hLat, hLon] = pathWaypoints[0];
     const lines = [
         'QGC WPL 110',
-        `0\t1\t0\t16\t0\t0\t0\t0\t${hLat.toFixed(7)}\t${hLon.toFixed(7)}\t${altitude.toFixed(6)}\t1`,
+        `0\t1\t0\t16\t0\t0\t0\t0\t${hLat.toFixed(7)}\t${hLon.toFixed(7)}\t${altitudeM.toFixed(6)}\t1`,
         ...pathWaypoints.map(([lat, lon], i) =>
-            `${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${lat.toFixed(7)}\t${lon.toFixed(7)}\t${altitude.toFixed(6)}\t1`
+            `${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${lat.toFixed(7)}\t${lon.toFixed(7)}\t${altitudeM.toFixed(6)}\t1`
         ),
     ];
     const a = Object.assign(document.createElement('a'), {
         href: URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/plain' })),
-        download: 'mow_path.waypoints',
+        download: 'yardpilot.waypoints',
     });
     a.click();
     URL.revokeObjectURL(a.href);

@@ -87,8 +87,8 @@ body {
 
 .logo {
     display: block;
-    width: auto;
-    height: 32px;
+    width: calc(var(--sidebar-w) - 48px);
+    height: auto;
     filter: drop-shadow(0 0 4px var(--accent-glow));
 }
 
@@ -566,6 +566,14 @@ body {
     color: var(--text);
 }
 
+.map-controls-card .control-header {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+}
+
 /* ── Floating Statistics Panel ───────────────────────── */
 
 .stats-panel {
@@ -665,4 +673,39 @@ body {
 
 .map-tile-satellite {
     filter: brightness(var(--map-brightness, 100%));
+}
+
+/* ── Units toggle ────────────────────────────────────── */
+
+.units-toggle {
+    display: flex;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.units-btn {
+    flex: 1;
+    padding: 5px 0;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.units-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.units-btn.active {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 8px var(--accent-glow);
 }
