@@ -83,7 +83,7 @@ function toMetric(displayVal, type) {
 //   decimals_imp  – display decimal places when imperial
 const UNIT_INPUTS = {
     //                                              step_m  step_imp  dec_m  dec_imp
-    'input-lane-width':           { type:'length', step_m:0.1,  step_imp:0.5,  dec_m:1, dec_imp:1, labelEl:null,                metricLabel:'Lane width (m)',          imperialLabel:'Lane width (ft)'          },
+    'input-lane-width':           { type:'length', step_m:0.01, step_imp:0.05, dec_m:2, dec_imp:2, labelEl:null,                metricLabel:'Lane width (m)',          imperialLabel:'Lane width (ft)'          },
     'input-exclusion-buffer':     { type:'length', step_m:0.1,  step_imp:0.5,  dec_m:1, dec_imp:1, labelEl:null,                metricLabel:'Exclusion buffer (m)',     imperialLabel:'Exclusion buffer (ft)'     },
     'input-transition-tolerance': { type:'length', step_m:0.05, step_imp:0.1,  dec_m:2, dec_imp:2, labelEl:null,                metricLabel:'Transition tolerance (m)', imperialLabel:'Transition tolerance (ft)' },
     'input-target-speed':         { type:'speed',  step_m:0.1,  step_imp:0.1,  dec_m:1, dec_imp:1, labelEl:'label-target-speed', metricLabel:'Target speed (m/s)',       imperialLabel:'Target speed (mph)'       },
@@ -691,3 +691,30 @@ loadZones();
 
 document.getElementById('input-target-speed').addEventListener('change', saveSettings);
 document.getElementById('input-altitude').addEventListener('change', saveSettings);
+
+// ── Help Modal Handlers ───────────────────────────────────
+
+const helpModal = document.getElementById('help-modal');
+const btnHelp   = document.getElementById('btn-help');
+const btnClose  = document.getElementById('btn-close-help');
+
+btnHelp.addEventListener('click', () => {
+    helpModal.classList.add('active');
+});
+
+btnClose.addEventListener('click', () => {
+    helpModal.classList.remove('active');
+});
+
+helpModal.addEventListener('click', (e) => {
+    if (e.target === helpModal) {
+        helpModal.classList.remove('active');
+    }
+});
+
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && helpModal.classList.contains('active')) {
+        helpModal.classList.remove('active');
+    }
+});
+

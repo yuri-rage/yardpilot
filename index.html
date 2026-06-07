@@ -117,7 +117,16 @@
                         </div>
                     </section>
                     <section class="nav-section">
-                        <h3 class="nav-section-title">Lane Settings</h3>
+                        <h3 class="nav-section-title">
+                            <span>Lane Settings</span>
+                            <button id="btn-help" class="btn-help" title="Help">
+                                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.8" />
+                                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                                    <line x1="12" y1="17" x2="12.01" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                                </svg>
+                            </button>
+                        </h3>
                         <div class="nav-section-content">
                             <label class="input-row">
                                 <span>Lane width</span>
@@ -127,7 +136,18 @@
                                     value="1.2"
                                     min="0.1"
                                     max="240"
-                                    step="0.1"
+                                    step="0.01"
+                                />
+                            </label>
+                            <label class="input-row">
+                                <span>Skip lanes</span>
+                                <input
+                                    id="input-skip-lanes"
+                                    type="number"
+                                    value="0"
+                                    min="0"
+                                    max="10"
+                                    step="1"
                                 />
                             </label>
                             <label class="input-row">
@@ -150,17 +170,6 @@
                                     min="0"
                                     max="10"
                                     step="0.1"
-                                />
-                            </label>
-                            <label class="input-row">
-                                <span>Skip lanes</span>
-                                <input
-                                    id="input-skip-lanes"
-                                    type="number"
-                                    value="0"
-                                    min="0"
-                                    max="10"
-                                    step="1"
                                 />
                             </label>
                             <label class="toggle-row">
@@ -431,6 +440,42 @@
                 </div>
             </main>
         </div>
+        <!-- Help Modal -->
+        <div id="help-modal" class="modal-overlay">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>YardPilot Usage</h3>
+                    <button id="btn-close-help" class="btn-close" title="Close Help">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                            <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p><strong>YardPilot</strong> is an <a href="https://link.springer.com/article/10.1007/s41315-021-00199-8" target="_blank" rel="noopener noreferrer">advanced coverage path planner</a> designed to calculate optimized trajectories for autonomous lawnmowers/agricultural vehicles or survey applications.</p>
+                    
+                    <h4>1. Import Boundaries</h4>
+                    <p>Drag and drop a <code>.poly</code> or <code>.waypoints</code> file into the <strong>Perimeter</strong> drop zone to establish field boundaries.</p>
+                    <p>If desired, drop another <code>.waypoints</code> file containing fence/exclusion boundaries into the <strong>Exclusion</strong> drop zone.</p>
+                    
+                    <h4>2. Planning Parameters</h4>
+                    <ul>
+                        <li><strong>Lane Width:</strong> Distance between parallel passes (i.e., roughly mower deck width).</li>
+                        <li><strong>Exclusion Buffer:</strong> Safety margin maintained around exclusion zones.</li>
+                        <li><strong>Transition Tolerance:</strong> Increase to allow transitions/turns to overlap exclusion zones slightly. Larger values may reduce "spiky" paths, but can induce exclusion boundary breaches.</li>
+                        <li><strong>Skip Lanes:</strong> Skip-lane pattern to preserve turn radius between lanes. Set zero to disable.</li>
+                        <li><strong>Auto Sweep Angle:</strong> Calculates the optimal sweep angle (heading orthogonal to generated lanes) to minimize turns. Disable to set a custom angle.</li>
+                        <li><strong>Circle Segments:</strong> Circular exclusion zones are approximated by this many polygon vertices. Lower values result in less waypoint crowding.</li>
+                    </ul>
+                    
+                    <h4>3. Trajectory & Stats</h4>
+                    <p>Click <strong>Generate Path</strong> to plan the coverage pattern. The cyan path represents the planned route, beginning with a green dot and ending with a red dot. Statistics are displayed in the map panel.</p>
+                    <p>Click <strong>Export Waypoints</strong> to save a QGC-compliant <code>.waypoints</code> file directly to your device.</p>
+                </div>
+            </div>
+        </div>
+
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <script src="assets/planner.js"></script>
         <script src="assets/app.js"></script>
