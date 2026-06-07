@@ -155,6 +155,7 @@ function saveSettings() {
         sweepAngle:          document.getElementById('input-custom-sweep-angle').value,
         perimeterPasses:     document.getElementById('input-perimeter-passes').value,
         perimeterDirection:  document.getElementById('select-perimeter-direction').value,
+        circleSegments:      parseInt(document.getElementById('input-circle-segments').value) || 64,
         layerSatellite:      satelliteToggle.checked,
         layerLabels:         labelsToggle.checked,
         mapBrightness:       brightnessInput.value,
@@ -224,6 +225,7 @@ function loadSettings() {
         }
         if (settings.perimeterPasses    !== undefined) document.getElementById('input-perimeter-passes').value   = settings.perimeterPasses;
         if (settings.perimeterDirection !== undefined) document.getElementById('select-perimeter-direction').value = settings.perimeterDirection;
+        if (settings.circleSegments     !== undefined) document.getElementById('input-circle-segments').value     = settings.circleSegments;
 
         if (settings.layerSatellite !== undefined) {
             satelliteToggle.checked = settings.layerSatellite;
@@ -321,7 +323,8 @@ const settingInputs = [
     'checkbox-sweep-auto',
     'input-custom-sweep-angle',
     'input-perimeter-passes',
-    'select-perimeter-direction'
+    'select-perimeter-direction',
+    'input-circle-segments'
 ];
 settingInputs.forEach(id => {
     document.getElementById(id).addEventListener('change', saveSettings);
@@ -631,9 +634,11 @@ document.getElementById('btn-generate').addEventListener('click', () => {
     const direction  = document.getElementById('select-perimeter-direction').value || 'CW';
     const allShapes  = zones.exclusions.flatMap(z => z.shapes);
 
+    const circleSegments = parseInt(document.getElementById('input-circle-segments').value) || 64;
+
     const result = generateCoveragePath(
         zones.perimeter.coords, allShapes,
-        laneWidth, buffer, nPasses, direction, tolerance, skipLanes, sweepMode, sweepAngle
+        laneWidth, buffer, nPasses, direction, tolerance, skipLanes, sweepMode, sweepAngle, circleSegments
     );
     if (!result) return;
 

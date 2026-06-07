@@ -954,7 +954,7 @@ function getPolygonArea(poly) {
     return 0.5 * Math.abs(area);
 }
 
-function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasses = 0, direction = 'CW', tolerance = 0, skipLanes = 0, sweepMode = 'auto', sweepAngle = 0) {
+function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasses = 0, direction = 'CW', tolerance = 0, skipLanes = 0, sweepMode = 'auto', sweepAngle = 0, circleSegments = 64) {
     if (perimCoords.length < 3) return null;
 
     const oLat = perimCoords.reduce((s, c) => s + c[0], 0) / perimCoords.length;
@@ -972,7 +972,7 @@ function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasse
     const exPolys = exclusions.map(s => {
         if (s.type === 'circle') {
             const [cx, cy] = toLocal(s.lat, s.lon, oLat, oLon);
-            return circlePoly(cx, cy, s.radius + buffer);
+            return circlePoly(cx, cy, s.radius + buffer, circleSegments);
         }
         const poly = s.vertices.map(xy);
         return buffer > 0 ? expandPoly(poly, buffer) : poly;
@@ -1016,7 +1016,7 @@ function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasse
     const exPolysTolerance = exclusions.map(s => {
         if (s.type === 'circle') {
             const [cx, cy] = toLocal(s.lat, s.lon, oLat, oLon);
-            return circlePoly(cx, cy, s.radius + effBuffer);
+            return circlePoly(cx, cy, s.radius + effBuffer, circleSegments);
         }
         const poly = s.vertices.map(xy);
         return effBuffer > 0 ? expandPoly(poly, effBuffer) : poly;
@@ -1138,7 +1138,7 @@ function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasse
                         cx: cxR,
                         cy: cyR,
                         r: s.radius + totalBuffer,
-                        poly: rotPts(circlePoly(cx, cy, s.radius + totalBuffer), -angle)
+                        poly: rotPts(circlePoly(cx, cy, s.radius + totalBuffer, circleSegments), -angle)
                     };
                 }
                 const polyLocal = s.vertices.map(xy);
