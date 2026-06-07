@@ -390,7 +390,11 @@ function loadZones() {
           }
           return L.polygon(s.vertices, EXCLUSION_STYLE).addTo(map);
         });
-        zones.exclusions.push({ name: z.name, shapes: z.shapes, layers });
+        zones.exclusions.push({
+          name: z.name,
+          shapes: z.shapes,
+          layers,
+        });
       });
       document.getElementById("drop-exclusion").classList.add("has-file");
       syncUI();
@@ -592,7 +596,13 @@ function parseWaypointRows(text) {
   if (!lines[0].startsWith("QGC WPL")) return null;
   return lines.slice(1).map((line) => {
     const p = line.split("\t");
-    return { seq: +p[0], cmd: +p[3], param1: +p[4], lat: +p[8], lon: +p[9] };
+    return {
+      seq: +p[0],
+      cmd: +p[3],
+      param1: +p[4],
+      lat: +p[8],
+      lon: +p[9],
+    };
   });
 }
 
@@ -704,8 +714,9 @@ function displayStats(result) {
     const areaVal =
       areaSqFt > 1e6
         ? areaSqMiles.toFixed(4) + " mi²"
-        : areaSqFt.toLocaleString(undefined, { maximumFractionDigits: 0 }) +
-          " ft²";
+        : areaSqFt.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          }) + " ft²";
     const areaSub = (areaSqM * 0.000247105).toFixed(3) + " acres";
     document.getElementById("stat-area").textContent = areaVal;
     document.getElementById("stat-area-sub").textContent = areaSub;
@@ -737,8 +748,9 @@ function displayStats(result) {
     const areaVal =
       areaSqM > 10000
         ? (areaSqM / 10000).toFixed(2) + " ha"
-        : areaSqM.toLocaleString(undefined, { maximumFractionDigits: 0 }) +
-          " m²";
+        : areaSqM.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          }) + " m²";
     const areaSub = (areaSqM * 0.000247105).toFixed(2) + " acres";
     document.getElementById("stat-area").textContent = areaVal;
     document.getElementById("stat-area-sub").textContent = areaSub;
