@@ -17,19 +17,7 @@
                     <img src="assets/logo.png" alt="YardPilot" class="logo" />
                 </div>
                 <div class="sidebar-body">
-                    <section class="nav-section">
-                        <h3 class="nav-section-title">Map Layers</h3>
-                        <div class="nav-section-content">
-                            <label class="toggle-row">
-                                <span>Satellite imagery</span>
-                                <input type="checkbox" checked />
-                            </label>
-                            <label class="toggle-row">
-                                <span>Labels</span>
-                                <input type="checkbox" />
-                            </label>
-                        </div>
-                    </section>
+
                     <section class="nav-section">
                         <h3 class="nav-section-title">Zones</h3>
                         <div class="nav-section-content">
@@ -52,6 +40,7 @@
                             <label class="input-row">
                                 <span>Lane width (m)</span>
                                 <input
+                                    id="input-lane-width"
                                     type="number"
                                     value="2"
                                     min="0.1"
@@ -62,6 +51,7 @@
                             <label class="input-row">
                                 <span>Exclusion buffer (m)</span>
                                 <input
+                                    id="input-exclusion-buffer"
                                     type="number"
                                     value="1"
                                     min="0.1"
@@ -69,21 +59,99 @@
                                     step="0.1"
                                 />
                             </label>
+                            <label class="input-row">
+                                <span>Transition tolerance (m)</span>
+                                <input
+                                    id="input-transition-tolerance"
+                                    type="number"
+                                    value="0"
+                                    min="0"
+                                    max="10"
+                                    step="0.1"
+                                />
+                            </label>
+                            <label class="input-row">
+                                <span>Skip lanes</span>
+                                <input
+                                    id="input-skip-lanes"
+                                    type="number"
+                                    value="0"
+                                    min="0"
+                                    max="10"
+                                    step="1"
+                                />
+                            </label>
+                            <label class="toggle-row">
+                                <span>Auto sweep angle</span>
+                                <input type="checkbox" id="checkbox-sweep-auto" checked />
+                            </label>
+                            <div class="control-row" id="row-custom-sweep-angle" style="opacity: 0.35;">
+                                <div class="control-header">
+                                    <span>Sweep angle</span>
+                                    <span id="sweep-angle-val">0°</span>
+                                </div>
+                                <input
+                                    id="input-custom-sweep-angle"
+                                    type="range"
+                                    min="0"
+                                    max="180"
+                                    value="0"
+                                    disabled
+                                />
+                            </div>
+                            <label class="input-row">
+                                <span>Perimeter passes</span>
+                                <input
+                                    id="input-perimeter-passes"
+                                    type="number"
+                                    value="0"
+                                    min="0"
+                                    max="10"
+                                    step="1"
+                                />
+                            </label>
+                            <label class="input-row">
+                                <span>Perimeter direction</span>
+                                <select id="select-perimeter-direction">
+                                    <option value="CW">Clockwise</option>
+                                    <option value="CCW">Counter-Clockwise</option>
+                                </select>
+                            </label>
                         </div>
                     </section>
                     <section class="nav-section">
                         <div class="nav-section-content">
-                            <button class="btn" disabled>Generate Path</button>
-                            <button class="btn" disabled>Export Waypoints</button>
+                            <button class="btn" id="btn-generate" disabled>Generate Path</button>
+                            <button class="btn" id="btn-export" disabled>Export Waypoints</button>
                         </div>
                     </section>
                 </div>
             </nav>
             <main id="map-container">
                 <div id="map"></div>
+                <div class="map-controls-card">
+                    <h4 class="card-title">Map Layers</h4>
+                    <label class="toggle-row">
+                        <span>Satellite</span>
+                        <input type="checkbox" id="layer-satellite" checked />
+                    </label>
+                    <label class="toggle-row">
+                        <span>Labels</span>
+                        <input type="checkbox" id="layer-labels" />
+                    </label>
+                    <h4 class="card-title" style="margin-top: 10px;">Appearance</h4>
+                    <div class="control-row">
+                        <div class="control-header">
+                            <span>Brightness</span>
+                            <span id="brightness-val">100%</span>
+                        </div>
+                        <input type="range" id="map-brightness" min="20" max="150" value="100" />
+                    </div>
+                </div>
             </main>
         </div>
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script src="assets/planner.js"></script>
         <script src="assets/app.js"></script>
     </body>
 </html>

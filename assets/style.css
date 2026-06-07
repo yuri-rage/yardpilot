@@ -139,6 +139,21 @@ body {
     border-color: var(--accent);
 }
 
+.input-row select {
+    width: 90px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 4px 6px;
+    font-size: 13px;
+}
+
+.input-row select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
 .btn {
     width: 100%;
     padding: 7px 12px;
@@ -276,4 +291,109 @@ body {
 
 .zone-remove:hover {
     color: #f85149;
+}
+
+/* ── Floating Map Controls ───────────────────────────── */
+
+.map-controls-card {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    background: rgba(22, 27, 34, 0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    width: 155px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    pointer-events: auto;
+}
+
+.map-controls-card .card-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+}
+
+.map-controls-card .toggle-row {
+    font-size: 13px;
+    gap: 8px;
+    padding: 4px 0;
+    color: var(--text);
+}
+
+.control-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0;
+}
+
+.control-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--text);
+}
+
+.map-controls-card #brightness-val {
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+#sweep-angle-val {
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.control-row input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+    cursor: pointer;
+    background: var(--bg-elevated);
+    height: 4px;
+    border-radius: 2px;
+    outline: none;
+    appearance: none;
+}
+
+.control-row input[type="range"]::-webkit-slider-runnable-track {
+    background: var(--bg-elevated);
+    height: 4px;
+    border-radius: 2px;
+}
+
+.control-row input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    margin-top: -4px;
+    transition: transform 0.1s;
+}
+
+.control-row input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.control-row input[type="range"]:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.control-row input[type="range"]:disabled::-webkit-slider-thumb {
+    background: var(--text-muted);
+    cursor: not-allowed;
+}
+
+.map-tile-satellite {
+    filter: brightness(var(--map-brightness, 100%));
 }
