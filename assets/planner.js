@@ -7,10 +7,10 @@ const R_EARTH = 6371000;
 // Adopted in the paper to convert GPS ↔ a 2-D metric plane.
 // Coefficients A1–A4 as specified in the paper (§4.1, Eq. 4–6).
 
-const EE_A1 = 1.340264,
-    EE_A2 = -0.081106,
-    EE_A3 = 0.000893,
-    EE_A4 = 0.003796;
+const EE_A1 = 1.340264;
+const EE_A2 = -0.081106;
+const EE_A3 = 0.000893;
+const EE_A4 = 0.003796;
 
 // Parametric latitude θ:  sin θ = (√3/2) sin φ   [Eq. 4]
 function _eeTheta(phi) {
@@ -19,15 +19,15 @@ function _eeTheta(phi) {
 
 // y(θ) = θ(A1 + A2 θ² + A3 θ⁶ + A4 θ⁸)   [Eq. 6]
 function _eeY(th) {
-    const t2 = th * th,
-        t6 = t2 * t2 * t2;
+    const t2 = th * th;
+    const t6 = t2 * t2 * t2;
     return th * (EE_A1 + EE_A2 * t2 + EE_A3 * t6 + EE_A4 * t6 * t2);
 }
 
 // dy/dθ = A1 + 3A2 θ² + 7A3 θ⁶ + 9A4 θ⁸ — used in x-denominator [Eq. 5] and Newton inversion
 function _eeDY(th) {
-    const t2 = th * th,
-        t6 = t2 * t2 * t2;
+    const t2 = th * th;
+    const t6 = t2 * t2 * t2;
     return EE_A1 + 3 * EE_A2 * t2 + 7 * EE_A3 * t6 + 9 * EE_A4 * t6 * t2;
 }
 
@@ -66,8 +66,8 @@ function cross2d(O, A, B) {
 function convexHull(pts) {
     if (pts.length < 3) return pts.slice();
     const s = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    const lo = [],
-        hi = [];
+    const lo = [];
+    const hi = [];
     for (const p of s) {
         while (lo.length >= 2 && cross2d(lo.at(-2), lo.at(-1), p) <= 0)
             lo.pop();
@@ -87,21 +87,21 @@ function convexHull(pts) {
 // ── §4.2 Sweep direction via MBB (rotating calipers, Algorithm 1) ─────────────
 
 function rotPts(pts, a) {
-    const c = Math.cos(a),
-        s = Math.sin(a);
+    const c = Math.cos(a);
+    const s = Math.sin(a);
     return pts.map(([x, y]) => [x * c - y * s, x * s + y * c]);
 }
 
 function mbbSweepAngle(hull) {
-    let minArea = Infinity,
-        best = 0;
+    let minArea = Number.POSITIVE_INFINITY;
+    let best = 0;
     for (let i = 0; i < hull.length; i++) {
-        const [x1, y1] = hull[i],
-            [x2, y2] = hull[(i + 1) % hull.length];
+        const [x1, y1] = hull[i];
+        const [x2, y2] = hull[(i + 1) % hull.length];
         const a = Math.atan2(y2 - y1, x2 - x1);
         const r = rotPts(hull, -a);
-        const xs = r.map((p) => p[0]),
-            ys = r.map((p) => p[1]);
+        const xs = r.map((p) => p[0]);
+        const ys = r.map((p) => p[1]);
         const area =
             (Math.max(...xs) - Math.min(...xs)) *
             (Math.max(...ys) - Math.min(...ys));
@@ -149,10 +149,10 @@ function getSegIntersection(A, B, C, D) {
 }
 
 function getBBox(poly) {
-    let minX = Infinity,
-        maxX = -Infinity;
-    let minY = Infinity,
-        maxY = -Infinity;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
     for (const [x, y] of poly) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
@@ -163,10 +163,10 @@ function getBBox(poly) {
 }
 
 function crossesBoundary(a, b, poly, polyBBox = null) {
-    const sMinX = Math.min(a[0], b[0]),
-        sMaxX = Math.max(a[0], b[0]);
-    const sMinY = Math.min(a[1], b[1]),
-        sMaxY = Math.max(a[1], b[1]);
+    const sMinX = Math.min(a[0], b[0]);
+    const sMaxX = Math.max(a[0], b[0]);
+    const sMinY = Math.min(a[1], b[1]);
+    const sMaxY = Math.max(a[1], b[1]);
 
     if (polyBBox) {
         if (
@@ -180,14 +180,14 @@ function crossesBoundary(a, b, poly, polyBBox = null) {
     }
 
     for (let i = 0; i < poly.length; i++) {
-        const p1 = poly[i],
-            p2 = poly[(i + 1) % poly.length];
+        const p1 = poly[i];
+        const p2 = poly[(i + 1) % poly.length];
 
         // Edge bounding box check
-        const eMinX = Math.min(p1[0], p2[0]),
-            eMaxX = Math.max(p1[0], p2[0]);
-        const eMinY = Math.min(p1[1], p2[1]),
-            eMaxY = Math.max(p1[1], p2[1]);
+        const eMinX = Math.min(p1[0], p2[0]);
+        const eMaxX = Math.max(p1[0], p2[0]);
+        const eMinY = Math.min(p1[1], p2[1]);
+        const eMaxY = Math.max(p1[1], p2[1]);
 
         if (sMaxX < eMinX || sMinX > eMaxX || sMaxY < eMinY || sMinY > eMaxY) {
             continue;
@@ -201,8 +201,8 @@ function crossesBoundary(a, b, poly, polyBBox = null) {
 function pointInPoly([px, py], poly) {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-        const [xi, yi] = poly[i],
-            [xj, yj] = poly[j];
+        const [xi, yi] = poly[i];
+        const [xj, yj] = poly[j];
         if (
             yi > py !== yj > py &&
             px < ((xj - xi) * (py - yi)) / (yj - yi) + xi
@@ -244,8 +244,8 @@ function segmentFree(
 function isPolygonCW(poly) {
     let area = 0;
     for (let i = 0; i < poly.length; i++) {
-        const p1 = poly[i],
-            p2 = poly[(i + 1) % poly.length];
+        const p1 = poly[i];
+        const p2 = poly[(i + 1) % poly.length];
         area += p1[0] * p2[1] - p2[0] * p1[1];
     }
     return area < 0;
@@ -266,12 +266,12 @@ function insetPoly(poly, dist) {
         const C = poly[(i + 1) % N];
 
         // Edge vectors
-        const dx1 = B[0] - A[0],
-            dy1 = B[1] - A[1],
-            len1 = Math.hypot(dx1, dy1);
-        const dx2 = C[0] - B[0],
-            dy2 = C[1] - B[1],
-            len2 = Math.hypot(dx2, dy2);
+        const dx1 = B[0] - A[0];
+        const dy1 = B[1] - A[1];
+        const len1 = Math.hypot(dx1, dy1);
+        const dx2 = C[0] - B[0];
+        const dy2 = C[1] - B[1];
+        const len2 = Math.hypot(dx2, dy2);
 
         if (len1 < 1e-9 || len2 < 1e-9) {
             result.push([B[0], B[1]]);
@@ -607,12 +607,12 @@ function expandPoly(poly, dist) {
         const B = poly[i];
         const C = poly[(i + 1) % N];
 
-        const dx1 = B[0] - A[0],
-            dy1 = B[1] - A[1],
-            len1 = Math.hypot(dx1, dy1);
-        const dx2 = C[0] - B[0],
-            dy2 = C[1] - B[1],
-            len2 = Math.hypot(dx2, dy2);
+        const dx1 = B[0] - A[0];
+        const dy1 = B[1] - A[1];
+        const len1 = Math.hypot(dx1, dy1);
+        const dx2 = C[0] - B[0];
+        const dy2 = C[1] - B[1];
+        const len2 = Math.hypot(dx2, dy2);
 
         if (len1 < 1e-9 || len2 < 1e-9) {
             result.push([B[0], B[1]]);
@@ -658,8 +658,8 @@ function circlePoly(cx, cy, r, n = 64) {
 function scanXs(poly, sy) {
     const xs = [];
     for (let i = 0; i < poly.length; i++) {
-        const [x1, y1] = poly[i],
-            [x2, y2] = poly[(i + 1) % poly.length];
+        const [x1, y1] = poly[i];
+        const [x2, y2] = poly[(i + 1) % poly.length];
         if (y1 <= sy !== y2 <= sy)
             xs.push(x1 + ((sy - y1) / (y2 - y1)) * (x2 - x1));
     }
@@ -689,10 +689,10 @@ function subtractIntervals(lo, hi, exXs) {
 // Cell states:  0 = unvisited,  0.5 = visited,  1 = unvisitable
 
 function buildGrid(perimR, exR, cellSize) {
-    const xs = perimR.map((p) => p[0]),
-        ys = perimR.map((p) => p[1]);
-    const xMin = Math.min(...xs),
-        yMin = Math.min(...ys);
+    const xs = perimR.map((p) => p[0]);
+    const ys = perimR.map((p) => p[1]);
+    const xMin = Math.min(...xs);
+    const yMin = Math.min(...ys);
     const cols = Math.ceil((Math.max(...xs) - xMin) / cellSize);
     const rows = Math.ceil((Math.max(...ys) - yMin) / cellSize);
     const grid = Array.from({ length: rows }, (_, r) =>
@@ -789,10 +789,10 @@ const N_KNN = 10; // k-nearest neighbors in Voronoi roadmap (empirically set, §
 
 // Circumscribed circle of triangle (a, b, c).  Returns null for degenerate triangles.
 function circumcircle(a, b, c) {
-    const ax = b[0] - a[0],
-        ay = b[1] - a[1];
-    const bx = c[0] - a[0],
-        by = c[1] - a[1];
+    const ax = b[0] - a[0];
+    const ay = b[1] - a[1];
+    const bx = c[0] - a[0];
+    const by = c[1] - a[1];
     const D = 2 * (ax * by - ay * bx);
     if (Math.abs(D) < 1e-10) return null;
     const ux = (by * (ax * ax + ay * ay) - ay * (bx * bx + by * by)) / D;
@@ -806,10 +806,10 @@ function delaunayTriangulation(points) {
     const N = points.length;
     if (N < 3) return [];
 
-    let minX = Infinity,
-        minY = Infinity,
-        maxX = -Infinity,
-        maxY = -Infinity;
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
     for (const [x, y] of points) {
         minX = Math.min(minX, x);
         minY = Math.min(minY, y);
@@ -817,8 +817,8 @@ function delaunayTriangulation(points) {
         maxY = Math.max(maxY, y);
     }
     const d = Math.max(maxX - minX, maxY - minY) * 3 + 1;
-    const mx = (minX + maxX) / 2,
-        my = (minY + maxY) / 2;
+    const mx = (minX + maxX) / 2;
+    const my = (minY + maxY) / 2;
 
     // Super-triangle vertices at indices N, N+1, N+2
     const pts = [
@@ -842,8 +842,8 @@ function delaunayTriangulation(points) {
         for (let t = 0; t < tris.length; t++) {
             const { cc } = tris[t];
             if (!cc) continue;
-            const dx = px - cc.cx,
-                dy = py - cc.cy;
+            const dx = px - cc.cx;
+            const dy = py - cc.cy;
             if (dx * dx + dy * dy < cc.r2 + 1e-10) badIdx.add(t);
         }
 
@@ -882,8 +882,8 @@ function delaunayTriangulation(points) {
 function sampleEdgePoints(poly, spacing) {
     const pts = [];
     for (let i = 0; i < poly.length; i++) {
-        const [x1, y1] = poly[i],
-            [x2, y2] = poly[(i + 1) % poly.length];
+        const [x1, y1] = poly[i];
+        const [x2, y2] = poly[(i + 1) % poly.length];
         const len = Math.hypot(x2 - x1, y2 - y1);
         if (len < 1e-9) continue;
         const n = Math.max(1, Math.round(len / spacing));
@@ -1013,15 +1013,16 @@ function buildVoronoiRoadmap(
 // ── Algorithm 3: Dijkstra shortest path ───────────────────
 
 function dijkstra(adj, src, dst, n) {
-    const dist = Array(n).fill(Infinity),
-        prev = Array(n).fill(-1),
-        done = Array(n).fill(false);
+    const dist = Array(n).fill(Number.POSITIVE_INFINITY);
+    const prev = Array(n).fill(-1);
+    const done = Array(n).fill(false);
     dist[src] = 0;
     for (let iter = 0; iter < n; iter++) {
         let u = -1;
         for (let k = 0; k < n; k++)
             if (!done[k] && (u === -1 || dist[k] < dist[u])) u = k;
-        if (u === -1 || dist[u] === Infinity || u === dst) break;
+        if (u === -1 || dist[u] === Number.POSITIVE_INFINITY || u === dst)
+            break;
         done[u] = true;
         for (const { v, w } of adj[u])
             if (dist[u] + w < dist[v]) {
@@ -1029,7 +1030,7 @@ function dijkstra(adj, src, dst, n) {
                 prev[v] = u;
             }
     }
-    if (dist[dst] === Infinity) return null;
+    if (dist[dst] === Number.POSITIVE_INFINITY) return null;
     const path = [];
     for (let c = dst; c !== -1; c = prev[c]) path.unshift(c);
     return path;
@@ -1189,10 +1190,10 @@ function pathLength(path) {
 // ── Main entry point ───────────────────────────────────────
 
 function getClosestPointOnSegment(p, a, b) {
-    const abx = b[0] - a[0],
-        aby = b[1] - a[1];
-    const apx = p[0] - a[0],
-        apy = p[1] - a[1];
+    const abx = b[0] - a[0];
+    const aby = b[1] - a[1];
+    const apx = p[0] - a[0];
+    const apy = p[1] - a[1];
     const ab2 = abx * abx + aby * aby;
     if (ab2 < 1e-9) return [a[0], a[1]];
 
@@ -1202,11 +1203,11 @@ function getClosestPointOnSegment(p, a, b) {
 }
 
 function getClosestPointOnPoly(pt, poly) {
-    let minD = Infinity;
+    let minD = Number.POSITIVE_INFINITY;
     let closestPt = [pt[0], pt[1]];
     for (let i = 0; i < poly.length; i++) {
-        const a = poly[i],
-            b = poly[(i + 1) % poly.length];
+        const a = poly[i];
+        const b = poly[(i + 1) % poly.length];
         const cp = getClosestPointOnSegment(pt, a, b);
         const d = Math.hypot(pt[0] - cp[0], pt[1] - cp[1]);
         if (d < minD) {
@@ -1327,8 +1328,8 @@ function generateCoveragePath(
     // Project perimeter; drop closing duplicate if present
     const perim = perimCoords.map(xy);
     if (perim.length > 1) {
-        const [fx, fy] = perim[0],
-            [lx, ly] = perim.at(-1);
+        const [fx, fy] = perim[0];
+        const [lx, ly] = perim.at(-1);
         if (Math.hypot(fx - lx, fy - ly) < 0.01) perim.pop();
     }
 
@@ -1370,7 +1371,7 @@ function generateCoveragePath(
     } else if (sweepMode === "custom") {
         angle = (sweepAngle * Math.PI) / 180;
     } else {
-        const parsedAngle = parseFloat(sweepMode);
+        const parsedAngle = Number.parseFloat(sweepMode);
         angle = Number.isNaN(parsedAngle) ? 0 : (parsedAngle * Math.PI) / 180;
     }
 
@@ -1456,12 +1457,12 @@ function generateCoveragePath(
             const B = poly[i];
             const C = poly[(i + 1) % M];
 
-            const dx1 = B[0] - A[0],
-                dy1 = B[1] - A[1],
-                len1 = Math.hypot(dx1, dy1);
-            const dx2 = C[0] - B[0],
-                dy2 = C[1] - B[1],
-                len2 = Math.hypot(dx2, dy2);
+            const dx1 = B[0] - A[0];
+            const dy1 = B[1] - A[1];
+            const len1 = Math.hypot(dx1, dy1);
+            const dx2 = C[0] - B[0];
+            const dy2 = C[1] - B[1];
+            const len2 = Math.hypot(dx2, dy2);
 
             if (len1 < 1e-9 || len2 < 1e-9) {
                 origShiftVectors.push([0, 0]);
@@ -1494,7 +1495,7 @@ function generateCoveragePath(
             perimOuterR.reduce((s, p) => s + p[0], 0) / perimOuterR.length;
         const cy =
             perimOuterR.reduce((s, p) => s + p[1], 0) / perimOuterR.length;
-        let minDist = Infinity;
+        let minDist = Number.POSITIVE_INFINITY;
         for (const [x, y] of perimOuterR) {
             minDist = Math.min(minDist, Math.hypot(cx - x, cy - y));
         }
@@ -1760,7 +1761,7 @@ function generateCoveragePath(
             currentEnd = firstStrip.end;
             unvisited.delete(firstStrip);
         } else {
-            let bestCost = Infinity;
+            let bestCost = Number.POSITIVE_INFINITY;
             let bestOrient = null;
             let bestTransit = null;
             for (const strip of unvisited) {
@@ -1806,7 +1807,7 @@ function generateCoveragePath(
         }
 
         while (unvisited.size > 0) {
-            let bestCost = Infinity;
+            let bestCost = Number.POSITIVE_INFINITY;
             let bestStrip = null;
             let bestOrient = null;
             let bestTransit = null;

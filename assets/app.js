@@ -144,7 +144,7 @@ const UNIT_INPUTS = {
 // Read the raw metric value from a unit-sensitive input (using current unit mode)
 function getMetricValue(id) {
     const cfg = UNIT_INPUTS[id];
-    const raw = parseFloat(document.getElementById(id).value) || 0;
+    const raw = Number.parseFloat(document.getElementById(id).value) || 0;
     return toMetric(raw, cfg.type);
 }
 
@@ -162,7 +162,7 @@ function setDisplayValue(id, metricVal) {
     const cfg = UNIT_INPUTS[id];
     const displayVal = toDisplay(metricVal, cfg.type);
     const decimals = isImperial() ? cfg.dec_imp : cfg.dec_m;
-    document.getElementById(id).value = parseFloat(
+    document.getElementById(id).value = Number.parseFloat(
         displayVal.toFixed(decimals),
     );
 }
@@ -178,7 +178,7 @@ function applyUnitsToInputs(metricSnapshot) {
             : getStoredMetricValue(id);
         const displayVal = toDisplay(metricVal, cfg.type);
         const decimals = isImperial() ? cfg.dec_imp : cfg.dec_m;
-        el.value = parseFloat(displayVal.toFixed(decimals));
+        el.value = Number.parseFloat(displayVal.toFixed(decimals));
         el.step = isImperial() ? cfg.step_imp : cfg.step_m;
 
         // Update label
@@ -202,8 +202,10 @@ function saveSettings() {
         exclusionBuffer: getMetricValue("input-exclusion-buffer"),
         transitionTolerance: getMetricValue("input-transition-tolerance"),
         skipLanes:
-            parseInt(document.getElementById("input-skip-lanes").value, 10) ||
-            0,
+            Number.parseInt(
+                document.getElementById("input-skip-lanes").value,
+                10,
+            ) || 0,
         targetSpeed: getMetricValue("input-target-speed"),
         altitude: getMetricValue("input-altitude"),
         sweepAuto: document.getElementById("checkbox-sweep-auto").checked,
@@ -214,7 +216,7 @@ function saveSettings() {
             "select-perimeter-direction",
         ).value,
         circleSegments:
-            parseInt(
+            Number.parseInt(
                 document.getElementById("input-circle-segments").value,
                 10,
             ) || 64,
@@ -232,7 +234,7 @@ function getStoredMetricValue(id) {
     if (!data) {
         // Fall back to converting the current display value back to metric
         const cfg = UNIT_INPUTS[id];
-        const raw = parseFloat(document.getElementById(id).value) || 0;
+        const raw = Number.parseFloat(document.getElementById(id).value) || 0;
         return toMetric(raw, cfg.type);
     }
     try {
@@ -246,10 +248,10 @@ function getStoredMetricValue(id) {
         };
         const key = keyMap[id];
         if (key !== undefined && settings[key] !== undefined)
-            return parseFloat(settings[key]);
+            return Number.parseFloat(settings[key]);
     } catch (_e) {}
     const cfg = UNIT_INPUTS[id];
-    const raw = parseFloat(document.getElementById(id).value) || 0;
+    const raw = Number.parseFloat(document.getElementById(id).value) || 0;
     return toMetric(raw, cfg.type);
 }
 
@@ -394,12 +396,12 @@ function loadZones() {
             renderPerimeter(parsed.perimeter.coords, parsed.perimeter.name);
         }
         if (parsed.exclusions?.length) {
-            zones.exclusions.forEach((z) => {
+            for (const z of zones.exclusions) {
                 removeLayerGroup(z.layers);
-            });
+            }
             zones.exclusions = [];
 
-            parsed.exclusions.forEach((z) => {
+            for (const z of parsed.exclusions) {
                 const layers = z.shapes.map((s) => {
                     if (s.type === "circle") {
                         return L.circle([s.lat, s.lon], {
@@ -414,7 +416,7 @@ function loadZones() {
                     shapes: z.shapes,
                     layers,
                 });
-            });
+            }
             document.getElementById("drop-exclusion").classList.add("has-file");
             syncUI();
         }
@@ -435,9 +437,9 @@ const settingInputs = [
     "select-perimeter-direction",
     "input-circle-segments",
 ];
-settingInputs.forEach((id) => {
+for (const id of settingInputs) {
     document.getElementById(id).addEventListener("change", saveSettings);
-});
+}
 
 // Update slider state dynamically when checkbox is toggled
 const sweepAutoCheckbox = document.getElementById("checkbox-sweep-auto");
@@ -485,9 +487,9 @@ let endMarker = null;
 let lastResult = null;
 
 function removeLayerGroup(layers) {
-    layers.forEach((l) => {
+    for (const l of layers) {
         map.removeLayer(l);
-    });
+    }
 }
 
 function clearPerimeter() {
@@ -499,9 +501,9 @@ function clearPerimeter() {
 }
 
 function clearExclusions() {
-    zones.exclusions.forEach((z) => {
+    for (const z of zones.exclusions) {
         removeLayerGroup(z.layers);
-    });
+    }
     zones.exclusions = [];
     document.getElementById("drop-exclusion").classList.remove("has-file");
     saveZones();
@@ -571,7 +573,8 @@ function syncUI() {
             },
         });
     }
-    zones.exclusions.forEach((z, i) => {
+    for (let i = 0; i < zones.exclusions.length; i++) {
+        const z = zones.exclusions[i];
         entries.push({
             name: z.name,
             color: "#f85149",
@@ -583,18 +586,15 @@ function syncUI() {
                 saveZones();
             },
         });
-    });
+    }
 
-    entries.forEach(({ name, color, remove }) => {
+    for (const { name, color, remove } of entries) {
         const item = document.createElement("div");
         item.className = "zone-item";
-        item.innerHTML =
-            `<span class="zone-dot" style="background:${color}"></span>` +
-            `<span class="zone-name" title="${name}">${name}</span>` +
-            `<button class="zone-remove" title="Remove">×</button>`;
+        item.innerHTML = `<span class="zone-dot" style="background:${color}"></span><span class="zone-name" title="${name}">${name}</span><button class="zone-remove" title="Remove">×</button>`;
         item.querySelector(".zone-remove").addEventListener("click", remove);
         list.appendChild(item);
-    });
+    }
 
     document.getElementById("btn-generate").disabled = !zones.perimeter;
     document.getElementById("btn-export").disabled = !pathWaypoints;
@@ -818,22 +818,30 @@ document.getElementById("btn-generate").addEventListener("click", () => {
     const buffer = getMetricValue("input-exclusion-buffer") || 1.0;
     const tolerance = getMetricValue("input-transition-tolerance") || 0;
     const skipLanes =
-        parseInt(document.getElementById("input-skip-lanes").value, 10) || 0;
+        Number.parseInt(
+            document.getElementById("input-skip-lanes").value,
+            10,
+        ) || 0;
     const sweepAuto = document.getElementById("checkbox-sweep-auto").checked;
     const sweepMode = sweepAuto ? "auto" : "custom";
     const sweepAngle =
-        parseFloat(document.getElementById("input-custom-sweep-angle").value) ||
-        0;
+        Number.parseFloat(
+            document.getElementById("input-custom-sweep-angle").value,
+        ) || 0;
     const nPasses =
-        parseInt(document.getElementById("input-perimeter-passes").value, 10) ||
-        0;
+        Number.parseInt(
+            document.getElementById("input-perimeter-passes").value,
+            10,
+        ) || 0;
     const direction =
         document.getElementById("select-perimeter-direction").value || "CW";
     const allShapes = zones.exclusions.flatMap((z) => z.shapes);
 
     const circleSegments =
-        parseInt(document.getElementById("input-circle-segments").value, 10) ||
-        64;
+        Number.parseInt(
+            document.getElementById("input-circle-segments").value,
+            10,
+        ) || 64;
 
     const result = generateCoveragePath(
         zones.perimeter.coords,

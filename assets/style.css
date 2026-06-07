@@ -19,9 +19,8 @@
     --accent-cyan-glow: rgba(6, 182, 212, 0.25);
     --accent-amber: #f59e0b;
 
-    --font-sans:
-        "Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-        Ubuntu, Cantarell, sans-serif;
+    --font-sans: "Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Oxygen, Ubuntu, Cantarell, sans-serif;
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --glass-blur: blur(16px);
     --sidebar-w: 320px;
