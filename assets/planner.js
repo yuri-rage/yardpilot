@@ -759,9 +759,21 @@ function dijkstra(adj, src, dst, n) {
 //   lse = ‖p(s)−p(e)‖  if collision-free,
 //         lse_Voronoi   otherwise.
 // from and to are wired into the static roadmap as temporary query nodes.
-function routeTransition(from, to, roadmap, perimR, exR, exRC, perimBBox = null, exBBoxes = [], exCBBoxes = []) {
-    // Direct Euclidean path if collision-free (Eq. 10, first branch)
-    if (segmentFree(from, to, perimR, exR, exRC, perimBBox, exBBoxes, exCBBoxes)) return [from, to];
+function routeTransition(from, to, roadmap, perimR, perimR_tolerance, exR, exRC, perimBBox = null, perimBBox_tolerance = null, exBBoxes = [], exCBBoxes = []) {
+    // Check if both endpoints are inside the tolerance perimeter
+    const fromInTolerance = perimR_tolerance.length >= 3 && pointInPoly(from, perimR_tolerance);
+    const toInTolerance = perimR_tolerance.length >= 3 && pointInPoly(to, perimR_tolerance);
+    const useToleranceForDirect = fromInTolerance && toInTolerance;
+
+    if (useToleranceForDirect) {
+        if (segmentFree(from, to, perimR_tolerance, exR, exRC, perimBBox_tolerance, exBBoxes, exCBBoxes)) {
+            return [from, to];
+        }
+    } else {
+        if (segmentFree(from, to, perimR, exR, exRC, perimBBox, exBBoxes, exCBBoxes)) {
+            return [from, to];
+        }
+    }
 
     const { verts: sv, adj: sa } = roadmap;
     const ns = sv.length;
@@ -791,12 +803,29 @@ function routeTransition(from, to, roadmap, perimR, exR, exRC, perimBBox = null,
         }
 
         let connected = 0;
-        for (const { i, d } of dists) {
-            if (connected >= N_KNN) break;
-            if (segmentFree(pts[qi], sv[i], perimR, exR, exRC, perimBBox, exBBoxes, exCBBoxes)) {
-                adj[qi].push({ v: i + 2, w: d });
-                adj[i + 2].push({ v: qi, w: d });
-                connected++;
+        const targetInTolerance = perimR_tolerance.length >= 3 && pointInPoly(target, perimR_tolerance);
+
+        // First pass: try to connect cleanly within the tolerance perimeter
+        if (targetInTolerance) {
+            for (const { i, d } of dists) {
+                if (connected >= N_KNN) break;
+                if (segmentFree(pts[qi], sv[i], perimR_tolerance, exR, exRC, perimBBox_tolerance, exBBoxes, exCBBoxes)) {
+                    adj[qi].push({ v: i + 2, w: d });
+                    adj[i + 2].push({ v: qi, w: d });
+                    connected++;
+                }
+            }
+        }
+
+        // Fallback pass (or default if target is outside tolerance): wire using actual boundary
+        if (connected === 0) {
+            for (const { i, d } of dists) {
+                if (connected >= N_KNN) break;
+                if (segmentFree(pts[qi], sv[i], perimR, exR, exRC, perimBBox, exBBoxes, exCBBoxes)) {
+                    adj[qi].push({ v: i + 2, w: d });
+                    adj[i + 2].push({ v: qi, w: d });
+                    connected++;
+                }
             }
         }
     }
@@ -997,6 +1026,11 @@ function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasse
     const exRC_tolerance = exR_tolerance.map(ex => insetPoly(ex, 0.05));
     const exBBoxes_tolerance = exR_tolerance.map(getBBox);
     const exCBBoxes_tolerance = exRC_tolerance.map(getBBox);
+
+    // Tolerance buffer for outer perimeter safety check (transition paths)
+    const perimSafetyDist = Math.max(0.05, 0.5 * laneWidth - tolerance);
+    const perimOuterR_tolerance = insetPoly(perimOuterR, perimSafetyDist);
+    const perimBBox_tolerance = getBBox(perimOuterR_tolerance);
     
     // In sweep space, the outer perimeter already has exclusions subtracted
     let navigablePerimeterRotated = perimOuterR;
@@ -1205,7 +1239,7 @@ function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasse
     const strips   = generateStrips(gridData, laneWidth, perimR, exR);
 
     // §4.4 Build Voronoi roadmap once; reuse for all inter-strip transitions
-    const roadmap = buildVoronoiRoadmap(perimOuterR, exR_tolerance, exRC_tolerance, laneWidth, perimBBox, exBBoxes_tolerance, exCBBoxes_tolerance);
+    const roadmap = buildVoronoiRoadmap(perimOuterR_tolerance, exR_tolerance, exRC_tolerance, laneWidth, perimBBox_tolerance, exBBoxes_tolerance, exCBBoxes_tolerance);
 
     // Get final perimeter passes in original space (safely pushed outside obstacles)
     let safePerimeterPath = [];
@@ -1255,7 +1289,7 @@ function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasse
                     const dEuc = Math.hypot(currentEnd[0] - orient.start[0], currentEnd[1] - orient.start[1]);
                     if (dEuc >= bestCost) continue;
 
-                    const transit = routeTransition(currentEnd, orient.start, roadmap, perimOuterR, exR_tolerance, exRC_tolerance, perimBBox, exBBoxes_tolerance, exCBBoxes_tolerance);
+                    const transit = routeTransition(currentEnd, orient.start, roadmap, perimOuterR, perimOuterR_tolerance, exR_tolerance, exRC_tolerance, perimBBox, perimBBox_tolerance, exBBoxes_tolerance, exCBBoxes_tolerance);
                     const cost = pathLength(transit);
                     if (cost < bestCost) {
                         bestCost = cost;
@@ -1289,7 +1323,7 @@ function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasse
                     const dEuc = Math.hypot(currentEnd[0] - orient.start[0], currentEnd[1] - orient.start[1]);
                     if (dEuc >= bestCost) continue;
 
-                    const transit = routeTransition(currentEnd, orient.start, roadmap, perimOuterR, exR_tolerance, exRC_tolerance, perimBBox, exBBoxes_tolerance, exCBBoxes_tolerance);
+                    const transit = routeTransition(currentEnd, orient.start, roadmap, perimOuterR, perimOuterR_tolerance, exR_tolerance, exRC_tolerance, perimBBox, perimBBox_tolerance, exBBoxes_tolerance, exCBBoxes_tolerance);
                     const cost = pathLength(transit);
 
                     if (cost < bestCost) {
@@ -1316,7 +1350,7 @@ function generateCoveragePath(perimCoords, exclusions, laneWidth, buffer, nPasse
         // Transition smoothly from end of perimeter passes to start of boustrophedon sweep
         const startTransitRotated = perimeterPathRotated.at(-1);
         const endTransitRotated = fullPath[0];
-        const transitRotated = routeTransition(startTransitRotated, endTransitRotated, roadmap, perimOuterR, exR_tolerance, exRC_tolerance, perimBBox, exBBoxes_tolerance, exCBBoxes_tolerance);
+        const transitRotated = routeTransition(startTransitRotated, endTransitRotated, roadmap, perimOuterR, perimOuterR_tolerance, exR_tolerance, exRC_tolerance, perimBBox, perimBBox_tolerance, exBBoxes_tolerance, exCBBoxes_tolerance);
         const transit = rotPts(transitRotated, angle);
         
         const boustrophedonPath = rotPts(fullPath, angle);
