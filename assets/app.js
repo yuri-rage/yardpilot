@@ -223,9 +223,41 @@ function saveSettings() {
         layerSatellite: satelliteToggle.checked,
         layerLabels: labelsToggle.checked,
         mapBrightness: brightnessInput.value,
+        spiralMode: document.getElementById("checkbox-spiral-mode").checked,
+        reverseSpiral: document.getElementById("checkbox-reverse-spiral")
+            .checked,
         units: currentUnits,
     };
     localStorage.setItem("yardpilot_settings", JSON.stringify(settings));
+}
+
+function updateSpiralModeUI() {
+    const isSpiral = document.getElementById("checkbox-spiral-mode").checked;
+
+    // Disable/enable inputs
+    document.getElementById("input-skip-lanes").disabled = isSpiral;
+    document.getElementById("checkbox-sweep-auto").disabled = isSpiral;
+    document.getElementById("checkbox-reverse-spiral").disabled = !isSpiral;
+
+    const sweepAuto = document.getElementById("checkbox-sweep-auto").checked;
+    document.getElementById("input-custom-sweep-angle").disabled =
+        isSpiral || sweepAuto;
+
+    // Adjust opacities of rows
+    document.getElementById("row-skip-lanes").style.opacity = isSpiral
+        ? "0.35"
+        : "1.0";
+    document.getElementById("row-sweep-auto").style.opacity = isSpiral
+        ? "0.35"
+        : "1.0";
+    customSweepAngleRow.style.opacity = isSpiral || sweepAuto ? "0.35" : "1.0";
+    document.getElementById("row-reverse-spiral").style.opacity = isSpiral
+        ? "1.0"
+        : "0.35";
+
+    // Perimeter passes is always active now since it specifies reversing threshold
+    document.getElementById("input-perimeter-passes").disabled = false;
+    document.getElementById("row-perimeter-passes").style.opacity = "1.0";
 }
 
 // Return the stored METRIC value for a unit-sensitive input (from localStorage)
@@ -315,6 +347,15 @@ function loadSettings() {
         if (settings.circleSegments !== undefined)
             document.getElementById("input-circle-segments").value =
                 settings.circleSegments;
+        if (settings.spiralMode !== undefined) {
+            document.getElementById("checkbox-spiral-mode").checked =
+                settings.spiralMode;
+        }
+        if (settings.reverseSpiral !== undefined) {
+            document.getElementById("checkbox-reverse-spiral").checked =
+                settings.reverseSpiral;
+        }
+        updateSpiralModeUI();
 
         if (settings.layerSatellite !== undefined) {
             satelliteToggle.checked = settings.layerSatellite;
@@ -436,6 +477,8 @@ const settingInputs = [
     "input-perimeter-passes",
     "select-perimeter-direction",
     "input-circle-segments",
+    "checkbox-spiral-mode",
+    "checkbox-reverse-spiral",
 ];
 for (const id of settingInputs) {
     document.getElementById(id).addEventListener("change", saveSettings);
@@ -446,11 +489,23 @@ const sweepAutoCheckbox = document.getElementById("checkbox-sweep-auto");
 const sweepAngleInput = document.getElementById("input-custom-sweep-angle");
 const sweepAngleVal = document.getElementById("sweep-angle-val");
 const customSweepAngleRow = document.getElementById("row-custom-sweep-angle");
+const spiralModeCheckbox = document.getElementById("checkbox-spiral-mode");
+const reverseSpiralCheckbox = document.getElementById(
+    "checkbox-reverse-spiral",
+);
 
-sweepAutoCheckbox.addEventListener("change", (e) => {
-    const isAuto = e.target.checked;
-    sweepAngleInput.disabled = isAuto;
-    customSweepAngleRow.style.opacity = isAuto ? "0.35" : "1.0";
+sweepAutoCheckbox.addEventListener("change", () => {
+    updateSpiralModeUI();
+    saveSettings();
+});
+
+spiralModeCheckbox.addEventListener("change", () => {
+    updateSpiralModeUI();
+    saveSettings();
+});
+
+reverseSpiralCheckbox.addEventListener("change", () => {
+    updateSpiralModeUI();
     saveSettings();
 });
 
@@ -843,6 +898,11 @@ document.getElementById("btn-generate").addEventListener("click", () => {
             10,
         ) || 64;
 
+    const spiralMode = document.getElementById("checkbox-spiral-mode").checked;
+    const reverseSpiral = document.getElementById(
+        "checkbox-reverse-spiral",
+    ).checked;
+
     const result = generateCoveragePath(
         zones.perimeter.coords,
         allShapes,
@@ -855,6 +915,8 @@ document.getElementById("btn-generate").addEventListener("click", () => {
         sweepMode,
         sweepAngle,
         circleSegments,
+        spiralMode,
+        reverseSpiral,
     );
     if (!result) return;
 
