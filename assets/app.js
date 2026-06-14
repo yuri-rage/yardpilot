@@ -985,11 +985,22 @@ document.getElementById("btn-export").addEventListener("click", () => {
                 `${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${lat.toFixed(7)}\t${lon.toFixed(7)}\t${altitudeM.toFixed(6)}\t1`,
         ),
     ];
+    const filename = (() => {
+        if (zones.perimeter?.name) {
+            const rawName = zones.perimeter.name;
+            const lastDotIdx = rawName.lastIndexOf(".");
+            const basename =
+                lastDotIdx !== -1 ? rawName.substring(0, lastDotIdx) : rawName;
+            return `yp_${basename}.waypoints`;
+        }
+        return "yardpilot.waypoints";
+    })();
+
     const a = Object.assign(document.createElement("a"), {
         href: URL.createObjectURL(
             new Blob([lines.join("\n")], { type: "text/plain" }),
         ),
-        download: "yardpilot.waypoints",
+        download: filename,
     });
     a.click();
     URL.revokeObjectURL(a.href);
