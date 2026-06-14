@@ -184,6 +184,17 @@
                                 />
                             </label>
                             <label class="input-row">
+                                <span>Headland margin</span>
+                                <input
+                                    id="input-headland-margin"
+                                    type="number"
+                                    value="0"
+                                    min="-120"
+                                    max="120"
+                                    step="0.01"
+                                />
+                            </label>
+                            <label class="input-row">
                                 <span>Exclusion buffer</span>
                                 <input
                                     id="input-exclusion-buffer"
@@ -591,6 +602,18 @@
                             parallel passes (i.e., roughly mower deck width).
                         </li>
                         <li>
+                            <strong>Skip Lanes:</strong> Skip-lane pattern to
+                            preserve turn radius between lanes. Set zero to
+                            disable.
+                        </li>
+                        <li>
+                            <strong>Headland Margin:</strong> Safety
+                            margin/offset between the innermost perimeter pass
+                            (or the outer boundary if 0 perimeter passes are
+                            completed) and the sweep lanes. Negative values
+                            allow lanes to overlap the perimeter.
+                        </li>
+                        <li>
                             <strong>Exclusion Buffer:</strong> Safety margin
                             maintained around exclusion zones.
                         </li>
@@ -599,11 +622,6 @@
                             allow transitions/turns to overlap exclusion zones
                             slightly. Larger values may reduce "spiky" paths,
                             but can induce exclusion boundary breaches.
-                        </li>
-                        <li>
-                            <strong>Skip Lanes:</strong> Skip-lane pattern to
-                            preserve turn radius between lanes. Set zero to
-                            disable.
                         </li>
                         <li>
                             <strong>Auto Sweep Angle:</strong> Calculates the

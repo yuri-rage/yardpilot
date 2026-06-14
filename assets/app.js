@@ -119,6 +119,16 @@ const UNIT_INPUTS = {
         metricLabel: "Transition tolerance (m)",
         imperialLabel: "Transition tolerance (ft)",
     },
+    "input-headland-margin": {
+        type: "length",
+        step_m: 0.05,
+        step_imp: 0.1,
+        dec_m: 2,
+        dec_imp: 2,
+        labelEl: null,
+        metricLabel: "Headland margin (m)",
+        imperialLabel: "Headland margin (ft)",
+    },
     "input-target-speed": {
         type: "speed",
         step_m: 0.1,
@@ -201,6 +211,7 @@ function saveSettings() {
         laneWidth: getMetricValue("input-lane-width"),
         exclusionBuffer: getMetricValue("input-exclusion-buffer"),
         transitionTolerance: getMetricValue("input-transition-tolerance"),
+        headlandMargin: getMetricValue("input-headland-margin"),
         skipLanes:
             Number.parseInt(
                 document.getElementById("input-skip-lanes").value,
@@ -277,6 +288,7 @@ function getStoredMetricValue(id) {
             "input-transition-tolerance": "transitionTolerance",
             "input-target-speed": "targetSpeed",
             "input-altitude": "altitude",
+            "input-headland-margin": "headlandMargin",
         };
         const key = keyMap[id];
         if (key !== undefined && settings[key] !== undefined)
@@ -316,6 +328,8 @@ function loadSettings() {
             );
         if (settings.targetSpeed !== undefined)
             setDisplayValue("input-target-speed", settings.targetSpeed);
+        if (settings.headlandMargin !== undefined)
+            setDisplayValue("input-headland-margin", settings.headlandMargin);
         if (settings.altitude !== undefined)
             setDisplayValue("input-altitude", settings.altitude);
 
@@ -479,6 +493,7 @@ const settingInputs = [
     "input-circle-segments",
     "checkbox-spiral-mode",
     "checkbox-reverse-spiral",
+    "input-headland-margin",
 ];
 for (const id of settingInputs) {
     document.getElementById(id).addEventListener("change", saveSettings);
@@ -871,6 +886,7 @@ document.getElementById("btn-generate").addEventListener("click", () => {
     // All values retrieved as metric regardless of display unit
     const laneWidth = getMetricValue("input-lane-width") || 1.2;
     const buffer = getMetricValue("input-exclusion-buffer") || 1.0;
+    const headlandMargin = getMetricValue("input-headland-margin") || 0;
     const tolerance = getMetricValue("input-transition-tolerance") || 0;
     const skipLanes =
         Number.parseInt(
@@ -917,6 +933,7 @@ document.getElementById("btn-generate").addEventListener("click", () => {
         circleSegments,
         spiralMode,
         reverseSpiral,
+        headlandMargin,
     );
     if (!result) return;
 
