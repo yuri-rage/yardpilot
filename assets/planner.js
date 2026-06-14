@@ -253,6 +253,48 @@ function isPolygonCW(poly) {
 
 function insetPoly(poly, dist) {
     if (poly.length < 3) return poly.slice();
+    if (dist <= 0) return poly.slice();
+
+    if (typeof ClipperLib !== "undefined") {
+        try {
+            const scale = 1000000;
+            const co = new ClipperLib.ClipperOffset();
+            const path = poly.map(([x, y]) => ({
+                X: Math.round(x * scale),
+                Y: Math.round(y * scale),
+            }));
+            co.AddPath(
+                path,
+                ClipperLib.JoinType.jtMiter,
+                ClipperLib.EndType.etClosedPolygon,
+            );
+            const solution = new ClipperLib.Paths();
+            co.Execute(solution, -dist * scale);
+            if (solution.length > 0) {
+                let bestIdx = 0;
+                let maxArea = -1;
+                for (let i = 0; i < solution.length; i++) {
+                    const area = Math.abs(ClipperLib.Clipper.Area(solution[i]));
+                    if (area > maxArea) {
+                        maxArea = area;
+                        bestIdx = i;
+                    }
+                }
+                return solution[bestIdx].map((pt) => [
+                    pt.X / scale,
+                    pt.Y / scale,
+                ]);
+            } else {
+                return [];
+            }
+        } catch (e) {
+            console.warn(
+                "Clipper inset failed, falling back to miter-offset:",
+                e,
+            );
+        }
+    }
+
     const N = poly.length;
 
     // Check orientation to know which way is inward
@@ -1306,6 +1348,49 @@ function getPolygonArea(poly) {
     return 0.5 * Math.abs(area);
 }
 
+function getNavigableArea(poly, exPolys) {
+    if (poly.length < 3) return 0;
+    if (typeof ClipperLib === "undefined") {
+        return getPolygonArea(poly);
+    }
+    try {
+        const scale = 1000000;
+        const clipper = new ClipperLib.Clipper();
+
+        const pathP = poly.map(([x, y]) => ({
+            X: Math.round(x * scale),
+            Y: Math.round(y * scale),
+        }));
+        clipper.AddPath(pathP, ClipperLib.PolyType.ptSubject, true);
+
+        for (const ex of exPolys) {
+            const pathE = ex.map(([x, y]) => ({
+                X: Math.round(x * scale),
+                Y: Math.round(y * scale),
+            }));
+            clipper.AddPath(pathE, ClipperLib.PolyType.ptClip, true);
+        }
+
+        const solution = new ClipperLib.Paths();
+        clipper.Execute(
+            ClipperLib.ClipType.ctDifference,
+            solution,
+            ClipperLib.PolyFillType.pftNonZero,
+            ClipperLib.PolyFillType.pftNonZero,
+        );
+
+        let totalArea = 0;
+        for (let i = 0; i < solution.length; i++) {
+            const area = ClipperLib.Clipper.Area(solution[i]) / (scale * scale);
+            totalArea += area;
+        }
+        return Math.abs(totalArea);
+    } catch (e) {
+        console.warn("Failed to compute navigable area with Clipper:", e);
+        return getPolygonArea(poly);
+    }
+}
+
 function generateCoveragePath(
     perimCoords,
     exclusions,
@@ -1318,6 +1403,7 @@ function generateCoveragePath(
     sweepMode = "auto",
     sweepAngle = 0,
     circleSegments = 64,
+    spiralMode = false,
 ) {
     if (perimCoords.length < 3) return null;
 
@@ -1348,7 +1434,9 @@ function generateCoveragePath(
     const isIntersecting = [];
     for (const ex of exPolys) {
         const nextPoly = subtractPolygon(navigablePerimeter, ex);
-        const changed = nextPoly !== navigablePerimeter;
+        const areaBefore = getPolygonArea(navigablePerimeter);
+        const areaAfter = getPolygonArea(nextPoly);
+        const changed = Math.abs(areaBefore - areaAfter) > 0.01;
         isIntersecting.push(changed);
         navigablePerimeter = nextPoly;
     }
@@ -1356,11 +1444,28 @@ function generateCoveragePath(
         navigablePerimeter = perim;
     }
 
+    let computedNPasses = nPasses;
+    if (spiralMode) {
+        let p = 0;
+        const yardInsetLapsTemp = [];
+        while (true) {
+            const inset = insetPoly(navigablePerimeter, p * laneWidth);
+            const area = getPolygonArea(inset);
+            if (area < 0.01 || (yardInsetLapsTemp.length > 0 && area >= getPolygonArea(yardInsetLapsTemp[yardInsetLapsTemp.length - 1]))) {
+                break;
+            }
+            yardInsetLapsTemp.push(inset);
+            p++;
+            if (p > 1000) break;
+        }
+        computedNPasses = yardInsetLapsTemp.length;
+    }
+
     let perimBoustrophedonOrig = navigablePerimeter;
-    if (nPasses > 0) {
+    if (computedNPasses > 0) {
         perimBoustrophedonOrig = insetPoly(
             navigablePerimeter,
-            (nPasses - 0.5) * laneWidth,
+            (computedNPasses - 0.5) * laneWidth,
         );
     }
 
@@ -1404,7 +1509,7 @@ function generateCoveragePath(
     const navigablePerimeterRotated = perimOuterR;
 
     let perimR;
-    if (nPasses > 0) {
+    if (computedNPasses > 0) {
         perimR = rotPts(perimBoustrophedonOrig, -angle);
     } else {
         perimR = perimOuterR;
@@ -1439,9 +1544,20 @@ function generateCoveragePath(
         };
     });
 
+    // §4.4 Build Voronoi roadmap once; reuse for all inter-strip transitions
+    const roadmap = buildVoronoiRoadmap(
+        perimOuterR_tolerance,
+        exR_tolerance,
+        exRC_tolerance,
+        laneWidth,
+        perimBBox_tolerance,
+        exBBoxes_tolerance,
+        exCBBoxes_tolerance,
+    );
+
     // Generate perimeter passes in rotated space for clean collision checking
     let perimeterPathRotated = [];
-    if (nPasses > 0) {
+    if (computedNPasses > 0) {
         const poly = [...navigablePerimeterRotated];
         if (isPolygonCW(poly) !== (direction === "CW")) {
             poly.reverse();
@@ -1495,15 +1611,10 @@ function generateCoveragePath(
             perimOuterR.reduce((s, p) => s + p[0], 0) / perimOuterR.length;
         const cy =
             perimOuterR.reduce((s, p) => s + p[1], 0) / perimOuterR.length;
-        let minDist = Number.POSITIVE_INFINITY;
-        for (const [x, y] of perimOuterR) {
-            minDist = Math.min(minDist, Math.hypot(cx - x, cy - y));
-        }
 
         const getExDataForDist = (dist) => {
             return exclusions
                 .map((s, idx) => {
-                    if (isIntersecting[idx]) return null;
                     const totalBuffer = buffer + dist;
                     if (s.type === "circle") {
                         const [cx, cy] = toLocal(s.lat, s.lon, oLat, oLon);
@@ -1537,16 +1648,41 @@ function generateCoveragePath(
                 .filter((x) => x !== null);
         };
 
-        const exDataLaps = [];
         const yardInsetLaps = [];
-        for (let p = 0; p < nPasses; p++) {
-            exDataLaps.push(getExDataForDist(p * laneWidth));
+        for (let p = 0; p < computedNPasses; p++) {
             yardInsetLaps.push(insetPoly(perimOuterR, p * laneWidth));
         }
 
         const spacing = Math.max(laneWidth / 4, 0.5);
 
-        for (let p = 0; p < nPasses; p++) {
+        const isPointFree = (pt) => {
+            for (const ex of exR_tolerance) {
+                if (pointInPoly(pt, ex)) return false;
+            }
+            return perimOuterR_tolerance.length < 3 || pointInPoly(pt, perimOuterR_tolerance);
+        };
+
+        const exDataConstant = exclusions.map((s, idx) => {
+            const polyR = exR[idx];
+            if (s.type === "circle") {
+                const [cx, cy] = toLocal(s.lat, s.lon, oLat, oLon);
+                const [cxR, cyR] = rotPts([[cx, cy]], -angle)[0];
+                return {
+                    type: "circle",
+                    cx: cxR,
+                    cy: cyR,
+                    r: s.radius + buffer,
+                    poly: polyR,
+                };
+            }
+            return {
+                type: "polygon",
+                poly: polyR,
+            };
+        });
+
+        for (let p = 0; p < computedNPasses; p++) {
+            const passPoints = [];
             for (let i = 0; i < M; i++) {
                 const p1 = poly[i];
                 const p2 = poly[(i + 1) % M];
@@ -1569,47 +1705,27 @@ function generateCoveragePath(
                     ];
 
                     let dist;
-                    let currentExData;
                     let currentYardInset;
 
                     if (p > 0 && i === 0) {
                         dist = (p - 1 + k / n) * laneWidth;
-                        currentExData = getExDataForDist(dist);
                         currentYardInset = insetPoly(perimOuterR, dist);
                     } else {
                         dist = p * laneWidth;
-                        currentExData = exDataLaps[p];
                         currentYardInset = yardInsetLaps[p];
                     }
 
                     const offset = [pt[0] + sv[0] * dist, pt[1] + sv[1] * dist];
 
-                    const shiftLen = Math.hypot(
-                        offset[0] - pt[0],
-                        offset[1] - pt[1],
-                    );
-                    const maxAllowed = Math.hypot(cx - pt[0], cy - pt[1]) * 0.9;
-                    let currentPt = offset;
-                    if (shiftLen > maxAllowed && shiftLen > 1e-9) {
-                        const scale = maxAllowed / shiftLen;
-                        currentPt = [
-                            pt[0] + (offset[0] - pt[0]) * scale,
-                            pt[1] + (offset[1] - pt[1]) * scale,
-                        ];
-                    }
-
-                    // Push outside exclusions and clamp to the corresponding yard inset
-                    let finalPt = pushPointOutsideExclusions(
-                        currentPt,
-                        currentExData,
-                    );
+                    let finalPt = offset;
                     if (!pointInPoly(finalPt, currentYardInset)) {
-                        finalPt = getClosestPointOnPoly(
-                            finalPt,
-                            currentYardInset,
-                        );
+                        if (currentYardInset && currentYardInset.length > 0) {
+                            finalPt = getClosestPointOnPoly(finalPt, currentYardInset);
+                        } else if (yardInsetLaps.length > 0) {
+                            finalPt = getClosestPointOnPoly(finalPt, yardInsetLaps[yardInsetLaps.length - 1]);
+                        }
                     }
-                    perimeterPathRotated.push(finalPt);
+                    passPoints.push(finalPt);
                 }
             }
 
@@ -1619,85 +1735,108 @@ function generateCoveragePath(
                 const sv = origShiftVectors[0];
                 const dist = p * laneWidth;
                 const offset = [pt[0] + sv[0] * dist, pt[1] + sv[1] * dist];
-
-                const shiftLen = Math.hypot(
-                    offset[0] - pt[0],
-                    offset[1] - pt[1],
-                );
-                const maxAllowed = Math.hypot(cx - pt[0], cy - pt[1]) * 0.9;
-                let currentPt = offset;
-                if (shiftLen > maxAllowed && shiftLen > 1e-9) {
-                    const scale = maxAllowed / shiftLen;
-                    currentPt = [
-                        pt[0] + (offset[0] - pt[0]) * scale,
-                        pt[1] + (offset[1] - pt[1]) * scale,
-                    ];
-                }
-
-                let finalPt = pushPointOutsideExclusions(
-                    currentPt,
-                    exDataLaps[p],
-                );
+                let finalPt = offset;
                 if (!pointInPoly(finalPt, yardInsetLaps[p])) {
-                    finalPt = getClosestPointOnPoly(finalPt, yardInsetLaps[p]);
+                    if (yardInsetLaps[p] && yardInsetLaps[p].length > 0) {
+                        finalPt = getClosestPointOnPoly(finalPt, yardInsetLaps[p]);
+                    } else if (yardInsetLaps.length > 0) {
+                        finalPt = getClosestPointOnPoly(finalPt, yardInsetLaps[yardInsetLaps.length - 1]);
+                    }
                 }
-                perimeterPathRotated.push(finalPt);
+                passPoints.push(finalPt);
             }
 
-            // Draw the extra segment for the last lap (if more than 1 pass) to complete the loop at its final offset
-            if (p === nPasses - 1 && nPasses > 1) {
-                const p1 = poly[0];
-                const p2 = poly[1];
-                const sv1 = origShiftVectors[0];
-                const sv2 = origShiftVectors[1];
+            // Check if this pass has any free points
+            const hasFreePoint = passPoints.some((pt) => isPointFree(pt));
+            if (!hasFreePoint) {
+                continue;
+            }
 
-                const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
-                if (len >= 1e-9) {
-                    const n = Math.max(1, Math.round(len / spacing));
-                    for (let k = 1; k <= n; k++) {
-                        const t = k / n;
-                        const pt = [
-                            p1[0] + t * (p2[0] - p1[0]),
-                            p1[1] + t * (p2[1] - p1[1]),
-                        ];
-                        const sv = [
-                            sv1[0] + t * (sv2[0] - sv1[0]),
-                            sv1[1] + t * (sv2[1] - sv1[1]),
-                        ];
+            // Push all points of this pass outside exclusions
+            const pushedPassPoints = passPoints.map((pt) =>
+                pushPointOutsideExclusions(pt, exDataConstant),
+            );
 
-                        const dist = p * laneWidth;
-                        const offset = [
-                            pt[0] + sv[0] * dist,
-                            pt[1] + sv[1] * dist,
-                        ];
-
-                        const shiftLen = Math.hypot(
-                            offset[0] - pt[0],
-                            offset[1] - pt[1],
+            // Connect pushedPassPoints using routeTransition around obstacles
+            const routedPassPoints = [];
+            if (pushedPassPoints.length > 0) {
+                routedPassPoints.push(pushedPassPoints[0]);
+                for (let idx = 0; idx < pushedPassPoints.length - 1; idx++) {
+                    const from = pushedPassPoints[idx];
+                    const to = pushedPassPoints[idx + 1];
+                    const segDist = Math.hypot(to[0] - from[0], to[1] - from[1]);
+                    if (segDist < 0.05) {
+                        routedPassPoints.push(to);
+                    } else if (
+                        segmentFree(
+                            from,
+                            to,
+                            perimOuterR_tolerance,
+                            exR_tolerance,
+                            exRC_tolerance,
+                            perimBBox_tolerance,
+                            exBBoxes_tolerance,
+                            exCBBoxes_tolerance,
+                        )
+                    ) {
+                        routedPassPoints.push(to);
+                    } else {
+                        const transit = routeTransition(
+                            from,
+                            to,
+                            roadmap,
+                            perimOuterR,
+                            perimOuterR_tolerance,
+                            exR_tolerance,
+                            exRC_tolerance,
+                            perimBBox,
+                            perimBBox_tolerance,
+                            exBBoxes_tolerance,
+                            exCBBoxes_tolerance,
                         );
-                        const maxAllowed =
-                            Math.hypot(cx - pt[0], cy - pt[1]) * 0.9;
-                        let currentPt = offset;
-                        if (shiftLen > maxAllowed && shiftLen > 1e-9) {
-                            const scale = maxAllowed / shiftLen;
-                            currentPt = [
-                                pt[0] + (offset[0] - pt[0]) * scale,
-                                pt[1] + (offset[1] - pt[1]) * scale,
-                            ];
-                        }
-
-                        let finalPt = pushPointOutsideExclusions(
-                            currentPt,
-                            exDataLaps[p],
-                        );
-                        if (!pointInPoly(finalPt, yardInsetLaps[p])) {
-                            finalPt = getClosestPointOnPoly(
-                                finalPt,
-                                yardInsetLaps[p],
-                            );
-                        }
-                        perimeterPathRotated.push(finalPt);
+                        routedPassPoints.push(...transit.slice(1));
                     }
+                }
+            }
+
+            // Append routedPassPoints to perimeterPathRotated
+            if (routedPassPoints.length > 0) {
+                if (perimeterPathRotated.length > 0) {
+                    // Transition from previous pass's end to current pass's start
+                    const prevEnd = perimeterPathRotated.at(-1);
+                    const currStart = routedPassPoints[0];
+                    if (
+                        segmentFree(
+                            prevEnd,
+                            currStart,
+                            perimOuterR_tolerance,
+                            exR_tolerance,
+                            exRC_tolerance,
+                            perimBBox_tolerance,
+                            exBBoxes_tolerance,
+                            exCBBoxes_tolerance,
+                        )
+                    ) {
+                        perimeterPathRotated.push(currStart);
+                    } else {
+                        const transit = routeTransition(
+                            prevEnd,
+                            currStart,
+                            roadmap,
+                            perimOuterR,
+                            perimOuterR_tolerance,
+                            exR_tolerance,
+                            exRC_tolerance,
+                            perimBBox,
+                            perimBBox_tolerance,
+                            exBBoxes_tolerance,
+                            exCBBoxes_tolerance,
+                        );
+                        perimeterPathRotated.push(...transit.slice(1));
+                    }
+                    perimeterPathRotated.push(...routedPassPoints.slice(1));
+                } else {
+                    perimeterPathRotated.push(...routedPassPoints);
                 }
             }
         }
@@ -1709,32 +1848,59 @@ function generateCoveragePath(
     }
 
     // §4.3 Build grid coverage map (Eq. 7) and generate boustrophedon strips
-    const gridData = buildGrid(perimR, exR, laneWidth);
-    const strips = generateStrips(gridData, laneWidth, perimR, exR);
-
-    // §4.4 Build Voronoi roadmap once; reuse for all inter-strip transitions
-    const roadmap = buildVoronoiRoadmap(
-        perimOuterR_tolerance,
-        exR_tolerance,
-        exRC_tolerance,
-        laneWidth,
-        perimBBox_tolerance,
-        exBBoxes_tolerance,
-        exCBBoxes_tolerance,
-    );
+    const gridData = spiralMode ? null : buildGrid(perimR, exR, laneWidth);
+    const strips = spiralMode ? [] : generateStrips(gridData, laneWidth, perimR, exR);
 
     // Get final perimeter passes in original space (safely pushed outside obstacles)
     let safePerimeterPath = [];
-    if (nPasses > 0) {
+    if (computedNPasses > 0) {
         safePerimeterPath = rotPts(perimeterPathRotated, angle);
     }
 
     if (!strips.length) {
-        if (nPasses > 0) {
-            const path = safePerimeterPath.map(([x, y]) =>
+        if (computedNPasses > 0) {
+            const finalPathMetric = safePerimeterPath;
+            const path = finalPathMetric.map(([x, y]) =>
                 fromLocal(x, y, oLat, oLon),
             );
-            return { path, count: path.length };
+
+            // Compute total distance
+            let totalDistM = 0;
+            for (let i = 0; i < finalPathMetric.length - 1; i++) {
+                totalDistM += Math.hypot(
+                    finalPathMetric[i + 1][0] - finalPathMetric[i][0],
+                    finalPathMetric[i + 1][1] - finalPathMetric[i][1],
+                );
+            }
+
+            // Compute sweep distance (perimeter passes + boustrophedon sweep legs)
+            let perimeterDistM = 0;
+            if (perimeterPathRotated.length > 1) {
+                for (let i = 0; i < perimeterPathRotated.length - 1; i++) {
+                    perimeterDistM += Math.hypot(
+                        perimeterPathRotated[i + 1][0] - perimeterPathRotated[i][0],
+                        perimeterPathRotated[i + 1][1] - perimeterPathRotated[i][1],
+                    );
+                }
+            }
+            const sweepDistM = perimeterDistM;
+
+            // Compute covered area
+            let coveredAreaSqM = getPolygonArea(navigablePerimeter);
+            exclusions.forEach((_s, idx) => {
+                if (!isIntersecting[idx]) {
+                    coveredAreaSqM -= getPolygonArea(exPolys[idx]);
+                }
+            });
+            coveredAreaSqM = Math.max(0, coveredAreaSqM);
+
+            return {
+                path,
+                count: path.length,
+                totalDistM,
+                sweepDistM,
+                coveredAreaSqM,
+            };
         }
         return null;
     }
@@ -1860,7 +2026,7 @@ function generateCoveragePath(
 
     // Rotate back to original frame and convert to lat/lon
     let finalPathMetric = [];
-    if (nPasses > 0) {
+    if (computedNPasses > 0) {
         // Transition smoothly from end of perimeter passes to start of boustrophedon sweep
         const startTransitRotated = perimeterPathRotated.at(-1);
         const endTransitRotated = fullPath[0];
@@ -1903,7 +2069,7 @@ function generateCoveragePath(
 
     // Compute sweep distance (perimeter passes + boustrophedon sweep legs)
     let perimeterDistM = 0;
-    if (nPasses > 0 && perimeterPathRotated.length > 1) {
+    if (computedNPasses > 0 && perimeterPathRotated.length > 1) {
         for (let i = 0; i < perimeterPathRotated.length - 1; i++) {
             perimeterDistM += Math.hypot(
                 perimeterPathRotated[i + 1][0] - perimeterPathRotated[i][0],

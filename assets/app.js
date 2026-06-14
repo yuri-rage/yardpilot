@@ -223,9 +223,28 @@ function saveSettings() {
         layerSatellite: satelliteToggle.checked,
         layerLabels: labelsToggle.checked,
         mapBrightness: brightnessInput.value,
+        spiralMode: document.getElementById("checkbox-spiral-mode").checked,
         units: currentUnits,
     };
     localStorage.setItem("yardpilot_settings", JSON.stringify(settings));
+}
+
+function updateSpiralModeUI() {
+    const isSpiral = document.getElementById("checkbox-spiral-mode").checked;
+
+    // Disable/enable inputs
+    document.getElementById("input-perimeter-passes").disabled = isSpiral;
+    document.getElementById("input-skip-lanes").disabled = isSpiral;
+    document.getElementById("checkbox-sweep-auto").disabled = isSpiral;
+
+    const sweepAuto = document.getElementById("checkbox-sweep-auto").checked;
+    document.getElementById("input-custom-sweep-angle").disabled = isSpiral || sweepAuto;
+
+    // Adjust opacities of rows
+    document.getElementById("row-perimeter-passes").style.opacity = isSpiral ? "0.35" : "1.0";
+    document.getElementById("row-skip-lanes").style.opacity = isSpiral ? "0.35" : "1.0";
+    document.getElementById("row-sweep-auto").style.opacity = isSpiral ? "0.35" : "1.0";
+    document.getElementById("row-custom-sweep-angle").style.opacity = (isSpiral || sweepAuto) ? "0.35" : "1.0";
 }
 
 // Return the stored METRIC value for a unit-sensitive input (from localStorage)
@@ -315,6 +334,11 @@ function loadSettings() {
         if (settings.circleSegments !== undefined)
             document.getElementById("input-circle-segments").value =
                 settings.circleSegments;
+        if (settings.spiralMode !== undefined) {
+            document.getElementById("checkbox-spiral-mode").checked =
+                settings.spiralMode;
+        }
+        updateSpiralModeUI();
 
         if (settings.layerSatellite !== undefined) {
             satelliteToggle.checked = settings.layerSatellite;
@@ -436,6 +460,7 @@ const settingInputs = [
     "input-perimeter-passes",
     "select-perimeter-direction",
     "input-circle-segments",
+    "checkbox-spiral-mode",
 ];
 for (const id of settingInputs) {
     document.getElementById(id).addEventListener("change", saveSettings);
@@ -446,11 +471,15 @@ const sweepAutoCheckbox = document.getElementById("checkbox-sweep-auto");
 const sweepAngleInput = document.getElementById("input-custom-sweep-angle");
 const sweepAngleVal = document.getElementById("sweep-angle-val");
 const customSweepAngleRow = document.getElementById("row-custom-sweep-angle");
+const spiralModeCheckbox = document.getElementById("checkbox-spiral-mode");
 
 sweepAutoCheckbox.addEventListener("change", (e) => {
-    const isAuto = e.target.checked;
-    sweepAngleInput.disabled = isAuto;
-    customSweepAngleRow.style.opacity = isAuto ? "0.35" : "1.0";
+    updateSpiralModeUI();
+    saveSettings();
+});
+
+spiralModeCheckbox.addEventListener("change", (e) => {
+    updateSpiralModeUI();
     saveSettings();
 });
 
@@ -843,6 +872,8 @@ document.getElementById("btn-generate").addEventListener("click", () => {
             10,
         ) || 64;
 
+    const spiralMode = document.getElementById("checkbox-spiral-mode").checked;
+
     const result = generateCoveragePath(
         zones.perimeter.coords,
         allShapes,
@@ -855,6 +886,7 @@ document.getElementById("btn-generate").addEventListener("click", () => {
         sweepMode,
         sweepAngle,
         circleSegments,
+        spiralMode,
     );
     if (!result) return;
 

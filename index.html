@@ -172,7 +172,7 @@
                                     step="0.01"
                                 />
                             </label>
-                            <label class="input-row">
+                            <label class="input-row" id="row-skip-lanes">
                                 <span>Skip lanes</span>
                                 <input
                                     id="input-skip-lanes"
@@ -205,7 +205,7 @@
                                     step="0.1"
                                 />
                             </label>
-                            <label class="toggle-row">
+                            <label class="toggle-row" id="row-sweep-auto">
                                 <span>Auto sweep angle</span>
                                 <input
                                     type="checkbox"
@@ -236,7 +236,14 @@
                     <section class="nav-section">
                         <h3 class="nav-section-title">Perimeter Settings</h3>
                         <div class="nav-section-content">
-                            <label class="input-row">
+                            <label class="toggle-row">
+                                <span>Spiral mode</span>
+                                <input
+                                    type="checkbox"
+                                    id="checkbox-spiral-mode"
+                                />
+                            </label>
+                            <label class="input-row" id="row-perimeter-passes">
                                 <span>Perimeter passes</span>
                                 <input
                                     id="input-perimeter-passes"
