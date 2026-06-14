@@ -1348,6 +1348,52 @@ function getPolygonArea(poly) {
     return 0.5 * Math.abs(area);
 }
 
+function getMiterVectors(poly) {
+    const M = poly.length;
+    const shiftVectors = [];
+    const cw = isPolygonCW(poly);
+    const sign = cw ? -1 : 1;
+    for (let i = 0; i < M; i++) {
+        const A = poly[(i - 1 + M) % M];
+        const B = poly[i];
+        const C = poly[(i + 1) % M];
+
+        const dx1 = B[0] - A[0];
+        const dy1 = B[1] - A[1];
+        const len1 = Math.hypot(dx1, dy1);
+        const dx2 = C[0] - B[0];
+        const dy2 = C[1] - B[1];
+        const len2 = Math.hypot(dx2, dy2);
+
+        if (len1 < 1e-9 || len2 < 1e-9) {
+            shiftVectors.push([0, 0]);
+            continue;
+        }
+
+        const v1 = [dx1 / len1, dy1 / len1];
+        const v2 = [dx2 / len2, dy2 / len2];
+
+        const n1 = [-v1[1], v1[0]];
+        const n2 = [-v2[1], v2[0]];
+
+        const nb = [n1[0] + n2[0], n1[1] + n2[1]];
+        const lenB = Math.hypot(nb[0], nb[1]);
+        const m = lenB < 1e-9 ? n1 : [nb[0] / lenB, nb[1] / lenB];
+
+        const cosHalfAngle = n1[0] * m[0] + n1[1] * m[1];
+
+        let L = sign;
+        if (Math.abs(cosHalfAngle) > 0.1) {
+            L = sign / cosHalfAngle;
+            if (Math.abs(L) > 4) L = Math.sign(L) * 4;
+        } else {
+            L = sign * 4;
+        }
+        shiftVectors.push([m[0] * L, m[1] * L]);
+    }
+    return shiftVectors;
+}
+
 function generateCoveragePath(
     perimCoords,
     exclusions,
@@ -1362,6 +1408,7 @@ function generateCoveragePath(
     circleSegments = 64,
     spiralMode = false,
     reverseSpiral = false,
+    headlandMargin = 0,
 ) {
     if (perimCoords.length < 3) return null;
 
@@ -1426,12 +1473,48 @@ function generateCoveragePath(
         computedNPasses = yardInsetLapsTemp.length;
     }
 
-    let perimBoustrophedonOrig = navigablePerimeter;
-    if (computedNPasses > 0) {
-        perimBoustrophedonOrig = insetPoly(
-            navigablePerimeter,
-            (computedNPasses - 0.5) * laneWidth,
-        );
+    const polyOrig = [...navigablePerimeter];
+    const needsReverseOrig = isPolygonCW(polyOrig) !== (direction === "CW");
+    if (needsReverseOrig) {
+        polyOrig.reverse();
+    }
+    const M = polyOrig.length;
+    const cx = polyOrig.reduce((s, p) => s + p[0], 0) / M;
+    const cy = polyOrig.reduce((s, p) => s + p[1], 0) / M;
+
+    const limitShift = (orig, offset) => {
+        const shiftLen = Math.hypot(offset[0] - orig[0], offset[1] - orig[1]);
+        const distToCentroid = Math.hypot(cx - orig[0], cy - orig[1]);
+        const maxAllowed = distToCentroid * 0.9;
+        if (shiftLen > maxAllowed && shiftLen > 1e-9) {
+            const scale = maxAllowed / shiftLen;
+            return [
+                orig[0] + (offset[0] - orig[0]) * scale,
+                orig[1] + (offset[1] - orig[1]) * scale,
+            ];
+        }
+        return offset;
+    };
+
+    const shiftVectorsOrig = getMiterVectors(polyOrig);
+    const perimBoustrophedonOrig = [];
+    for (let i = 0; i < M; i++) {
+        const pt = polyOrig[i];
+        const sv = shiftVectorsOrig[i];
+        const dist =
+            i === 0 && computedNPasses > 1
+                ? (computedNPasses - 2) * laneWidth + headlandMargin
+                : (computedNPasses - 1) * laneWidth + headlandMargin;
+        const offset = [pt[0] + sv[0] * dist, pt[1] + sv[1] * dist];
+        perimBoustrophedonOrig.push(limitShift(pt, offset));
+    }
+
+    if (computedNPasses > 1) {
+        const pt = polyOrig[0];
+        const sv = shiftVectorsOrig[0];
+        const dist = (computedNPasses - 1) * laneWidth + headlandMargin;
+        const offset = [pt[0] + sv[0] * dist, pt[1] + sv[1] * dist];
+        perimBoustrophedonOrig.push(limitShift(pt, offset));
     }
 
     // §4.2 Optimal sweep direction from MBB of convex hull (Algorithm 1) or forced sweep direction
@@ -1473,12 +1556,7 @@ function generateCoveragePath(
     // In sweep space, the outer perimeter already has exclusions subtracted
     const navigablePerimeterRotated = perimOuterR;
 
-    let perimR;
-    if (computedNPasses > 0) {
-        perimR = rotPts(perimBoustrophedonOrig, -angle);
-    } else {
-        perimR = perimOuterR;
-    }
+    const perimR = rotPts(perimBoustrophedonOrig, -angle);
 
     // Inset exclusion polys (5 cm) for interior point tests — avoids boundary-vertex
     // ambiguity in pointInPoly for near-boundary Voronoi vertices.
