@@ -243,6 +243,13 @@
                                     id="checkbox-spiral-mode"
                                 />
                             </label>
+                            <label class="toggle-row" id="row-reverse-spiral">
+                                <span>Reverse spiral direction</span>
+                                <input
+                                    type="checkbox"
+                                    id="checkbox-reverse-spiral"
+                                />
+                            </label>
                             <label class="input-row" id="row-perimeter-passes">
                                 <span>Perimeter passes</span>
                                 <input
@@ -583,6 +590,22 @@
                             zones are approximated by this many polygon
                             vertices. Lower values result in less waypoint
                             crowding.
+                        </li>
+                        <li>
+                            <strong>Spiral Mode:</strong> Replaces parallel
+                            boustrophedon lanes with a continuous, inward-shrinking
+                            spiral pattern.
+                        </li>
+                        <li>
+                            <strong>Reverse Spiral Direction:</strong> Reverses
+                            the spiral winding direction (e.g., CW to CCW)
+                            after completing the initial perimeter passes.
+                        </li>
+                        <li>
+                            <strong>Perimeter Passes:</strong> In standard mode,
+                            sets the number of concentric passes run around the boundary
+                            before the sweep begins. In spiral mode with reversal,
+                            defines the number of passes completed before the direction changes.
                         </li>
                     </ul>
 

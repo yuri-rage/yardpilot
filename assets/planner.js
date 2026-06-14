@@ -1348,49 +1348,6 @@ function getPolygonArea(poly) {
     return 0.5 * Math.abs(area);
 }
 
-function getNavigableArea(poly, exPolys) {
-    if (poly.length < 3) return 0;
-    if (typeof ClipperLib === "undefined") {
-        return getPolygonArea(poly);
-    }
-    try {
-        const scale = 1000000;
-        const clipper = new ClipperLib.Clipper();
-
-        const pathP = poly.map(([x, y]) => ({
-            X: Math.round(x * scale),
-            Y: Math.round(y * scale),
-        }));
-        clipper.AddPath(pathP, ClipperLib.PolyType.ptSubject, true);
-
-        for (const ex of exPolys) {
-            const pathE = ex.map(([x, y]) => ({
-                X: Math.round(x * scale),
-                Y: Math.round(y * scale),
-            }));
-            clipper.AddPath(pathE, ClipperLib.PolyType.ptClip, true);
-        }
-
-        const solution = new ClipperLib.Paths();
-        clipper.Execute(
-            ClipperLib.ClipType.ctDifference,
-            solution,
-            ClipperLib.PolyFillType.pftNonZero,
-            ClipperLib.PolyFillType.pftNonZero,
-        );
-
-        let totalArea = 0;
-        for (let i = 0; i < solution.length; i++) {
-            const area = ClipperLib.Clipper.Area(solution[i]) / (scale * scale);
-            totalArea += area;
-        }
-        return Math.abs(totalArea);
-    } catch (e) {
-        console.warn("Failed to compute navigable area with Clipper:", e);
-        return getPolygonArea(poly);
-    }
-}
-
 function generateCoveragePath(
     perimCoords,
     exclusions,
@@ -1404,6 +1361,7 @@ function generateCoveragePath(
     sweepAngle = 0,
     circleSegments = 64,
     spiralMode = false,
+    reverseSpiral = false,
 ) {
     if (perimCoords.length < 3) return null;
 
@@ -1451,7 +1409,14 @@ function generateCoveragePath(
         while (true) {
             const inset = insetPoly(navigablePerimeter, p * laneWidth);
             const area = getPolygonArea(inset);
-            if (area < 0.01 || (yardInsetLapsTemp.length > 0 && area >= getPolygonArea(yardInsetLapsTemp[yardInsetLapsTemp.length - 1]))) {
+            if (
+                area < 0.01 ||
+                (yardInsetLapsTemp.length > 0 &&
+                    area >=
+                        getPolygonArea(
+                            yardInsetLapsTemp[yardInsetLapsTemp.length - 1],
+                        ))
+            ) {
                 break;
             }
             yardInsetLapsTemp.push(inset);
@@ -1557,6 +1522,7 @@ function generateCoveragePath(
 
     // Generate perimeter passes in rotated space for clean collision checking
     let perimeterPathRotated = [];
+    let hasGeneratedReversedLap = false;
     if (computedNPasses > 0) {
         const poly = [...navigablePerimeterRotated];
         if (isPolygonCW(poly) !== (direction === "CW")) {
@@ -1607,47 +1573,6 @@ function generateCoveragePath(
             origShiftVectors.push([m[0] * L, m[1] * L]);
         }
 
-        const cx =
-            perimOuterR.reduce((s, p) => s + p[0], 0) / perimOuterR.length;
-        const cy =
-            perimOuterR.reduce((s, p) => s + p[1], 0) / perimOuterR.length;
-
-        const getExDataForDist = (dist) => {
-            return exclusions
-                .map((s, idx) => {
-                    const totalBuffer = buffer + dist;
-                    if (s.type === "circle") {
-                        const [cx, cy] = toLocal(s.lat, s.lon, oLat, oLon);
-                        const [cxR, cyR] = rotPts([[cx, cy]], -angle)[0];
-                        return {
-                            type: "circle",
-                            cx: cxR,
-                            cy: cyR,
-                            r: s.radius + totalBuffer,
-                            poly: rotPts(
-                                circlePoly(
-                                    cx,
-                                    cy,
-                                    s.radius + totalBuffer,
-                                    circleSegments,
-                                ),
-                                -angle,
-                            ),
-                        };
-                    }
-                    const polyLocal = s.vertices.map(xy);
-                    const expanded =
-                        totalBuffer > 0
-                            ? expandPoly(polyLocal, totalBuffer)
-                            : polyLocal;
-                    return {
-                        type: "polygon",
-                        poly: rotPts(expanded, -angle),
-                    };
-                })
-                .filter((x) => x !== null);
-        };
-
         const yardInsetLaps = [];
         for (let p = 0; p < computedNPasses; p++) {
             yardInsetLaps.push(insetPoly(perimOuterR, p * laneWidth));
@@ -1659,7 +1584,10 @@ function generateCoveragePath(
             for (const ex of exR_tolerance) {
                 if (pointInPoly(pt, ex)) return false;
             }
-            return perimOuterR_tolerance.length < 3 || pointInPoly(pt, perimOuterR_tolerance);
+            return (
+                perimOuterR_tolerance.length < 3 ||
+                pointInPoly(pt, perimOuterR_tolerance)
+            );
         };
 
         const exDataConstant = exclusions.map((s, idx) => {
@@ -1683,67 +1611,177 @@ function generateCoveragePath(
 
         for (let p = 0; p < computedNPasses; p++) {
             const passPoints = [];
-            for (let i = 0; i < M; i++) {
-                const p1 = poly[i];
-                const p2 = poly[(i + 1) % M];
-                const sv1 = origShiftVectors[i];
-                const sv2 = origShiftVectors[(i + 1) % M];
+            const isReversedPass = spiralMode && reverseSpiral && p >= nPasses;
 
-                const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
-                if (len < 1e-9) continue;
+            if (isReversedPass) {
+                const shift = nPasses > 0 ? 1 : 0;
+                // CCW traversal: poly[M-1] -> poly[M-2] -> ... -> poly[0] -> poly[M-1]
+                for (let i = M - 1; i >= 0; i--) {
+                    const p1 = poly[i];
+                    const p2 = poly[(i - 1 + M) % M];
+                    const sv1 = origShiftVectors[i];
+                    const sv2 = origShiftVectors[(i - 1 + M) % M];
 
-                const n = Math.max(1, Math.round(len / spacing));
-                for (let k = 0; k < n; k++) {
-                    const t = k / n;
-                    const pt = [
-                        p1[0] + t * (p2[0] - p1[0]),
-                        p1[1] + t * (p2[1] - p1[1]),
-                    ];
-                    const sv = [
-                        sv1[0] + t * (sv2[0] - sv1[0]),
-                        sv1[1] + t * (sv2[1] - sv1[1]),
-                    ];
+                    const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+                    if (len < 1e-9) continue;
 
-                    let dist;
-                    let currentYardInset;
+                    const n = Math.max(1, Math.round(len / spacing));
+                    for (let k = 0; k < n; k++) {
+                        const t = k / n;
+                        const pt = [
+                            p1[0] + t * (p2[0] - p1[0]),
+                            p1[1] + t * (p2[1] - p1[1]),
+                        ];
+                        const sv = [
+                            sv1[0] + t * (sv2[0] - sv1[0]),
+                            sv1[1] + t * (sv2[1] - sv1[1]),
+                        ];
 
-                    if (p > 0 && i === 0) {
-                        dist = (p - 1 + k / n) * laneWidth;
-                        currentYardInset = insetPoly(perimOuterR, dist);
-                    } else {
-                        dist = p * laneWidth;
-                        currentYardInset = yardInsetLaps[p];
+                        let dist;
+                        let currentYardInset;
+
+                        if (hasGeneratedReversedLap && i === M - 1) {
+                            dist = (p - shift - 1 + k / n) * laneWidth;
+                            currentYardInset = insetPoly(perimOuterR, dist);
+                        } else {
+                            dist = (p - shift) * laneWidth;
+                            currentYardInset =
+                                yardInsetLaps[Math.max(0, p - shift)];
+                        }
+
+                        const offset = [
+                            pt[0] + sv[0] * dist,
+                            pt[1] + sv[1] * dist,
+                        ];
+
+                        let finalPt = offset;
+                        if (!pointInPoly(finalPt, currentYardInset)) {
+                            if (
+                                currentYardInset &&
+                                currentYardInset.length > 0
+                            ) {
+                                finalPt = getClosestPointOnPoly(
+                                    finalPt,
+                                    currentYardInset,
+                                );
+                            } else if (yardInsetLaps.length > 0) {
+                                finalPt = getClosestPointOnPoly(
+                                    finalPt,
+                                    yardInsetLaps[yardInsetLaps.length - 1],
+                                );
+                            }
+                        }
+                        passPoints.push(finalPt);
                     }
-
+                }
+                // Push the final point poly[M-1] to complete the loop
+                {
+                    const pt = poly[M - 1];
+                    const sv = origShiftVectors[M - 1];
+                    const dist = (p - shift) * laneWidth;
                     const offset = [pt[0] + sv[0] * dist, pt[1] + sv[1] * dist];
-
                     let finalPt = offset;
-                    if (!pointInPoly(finalPt, currentYardInset)) {
-                        if (currentYardInset && currentYardInset.length > 0) {
-                            finalPt = getClosestPointOnPoly(finalPt, currentYardInset);
+                    const targetLapIdx = Math.max(0, p - shift);
+                    if (!pointInPoly(finalPt, yardInsetLaps[targetLapIdx])) {
+                        if (
+                            yardInsetLaps[targetLapIdx] &&
+                            yardInsetLaps[targetLapIdx].length > 0
+                        ) {
+                            finalPt = getClosestPointOnPoly(
+                                finalPt,
+                                yardInsetLaps[targetLapIdx],
+                            );
                         } else if (yardInsetLaps.length > 0) {
-                            finalPt = getClosestPointOnPoly(finalPt, yardInsetLaps[yardInsetLaps.length - 1]);
+                            finalPt = getClosestPointOnPoly(
+                                finalPt,
+                                yardInsetLaps[yardInsetLaps.length - 1],
+                            );
                         }
                     }
                     passPoints.push(finalPt);
                 }
-            }
+            } else {
+                // CW traversal: poly[0] -> poly[1] -> ... -> poly[M-1]
+                for (let i = 0; i < M; i++) {
+                    const p1 = poly[i];
+                    const p2 = poly[(i + 1) % M];
+                    const sv1 = origShiftVectors[i];
+                    const sv2 = origShiftVectors[(i + 1) % M];
 
-            // Close the loop for this pass
-            {
-                const pt = poly[0];
-                const sv = origShiftVectors[0];
-                const dist = p * laneWidth;
-                const offset = [pt[0] + sv[0] * dist, pt[1] + sv[1] * dist];
-                let finalPt = offset;
-                if (!pointInPoly(finalPt, yardInsetLaps[p])) {
-                    if (yardInsetLaps[p] && yardInsetLaps[p].length > 0) {
-                        finalPt = getClosestPointOnPoly(finalPt, yardInsetLaps[p]);
-                    } else if (yardInsetLaps.length > 0) {
-                        finalPt = getClosestPointOnPoly(finalPt, yardInsetLaps[yardInsetLaps.length - 1]);
+                    const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+                    if (len < 1e-9) continue;
+
+                    const n = Math.max(1, Math.round(len / spacing));
+                    for (let k = 0; k < n; k++) {
+                        const t = k / n;
+                        const pt = [
+                            p1[0] + t * (p2[0] - p1[0]),
+                            p1[1] + t * (p2[1] - p1[1]),
+                        ];
+                        const sv = [
+                            sv1[0] + t * (sv2[0] - sv1[0]),
+                            sv1[1] + t * (sv2[1] - sv1[1]),
+                        ];
+
+                        let dist;
+                        let currentYardInset;
+
+                        if (p > 0 && i === 0) {
+                            dist = (p - 1 + k / n) * laneWidth;
+                            currentYardInset = insetPoly(perimOuterR, dist);
+                        } else {
+                            dist = p * laneWidth;
+                            currentYardInset = yardInsetLaps[p];
+                        }
+
+                        const offset = [
+                            pt[0] + sv[0] * dist,
+                            pt[1] + sv[1] * dist,
+                        ];
+
+                        let finalPt = offset;
+                        if (!pointInPoly(finalPt, currentYardInset)) {
+                            if (
+                                currentYardInset &&
+                                currentYardInset.length > 0
+                            ) {
+                                finalPt = getClosestPointOnPoly(
+                                    finalPt,
+                                    currentYardInset,
+                                );
+                            } else if (yardInsetLaps.length > 0) {
+                                finalPt = getClosestPointOnPoly(
+                                    finalPt,
+                                    yardInsetLaps[yardInsetLaps.length - 1],
+                                );
+                            }
+                        }
+                        passPoints.push(finalPt);
                     }
                 }
-                passPoints.push(finalPt);
+
+                // Close the loop for this pass
+                {
+                    const pt = poly[0];
+                    const sv = origShiftVectors[0];
+                    const dist = p * laneWidth;
+                    const offset = [pt[0] + sv[0] * dist, pt[1] + sv[1] * dist];
+                    let finalPt = offset;
+                    if (!pointInPoly(finalPt, yardInsetLaps[p])) {
+                        if (yardInsetLaps[p] && yardInsetLaps[p].length > 0) {
+                            finalPt = getClosestPointOnPoly(
+                                finalPt,
+                                yardInsetLaps[p],
+                            );
+                        } else if (yardInsetLaps.length > 0) {
+                            finalPt = getClosestPointOnPoly(
+                                finalPt,
+                                yardInsetLaps[yardInsetLaps.length - 1],
+                            );
+                        }
+                    }
+                    passPoints.push(finalPt);
+                }
             }
 
             // Check if this pass has any free points
@@ -1764,7 +1802,10 @@ function generateCoveragePath(
                 for (let idx = 0; idx < pushedPassPoints.length - 1; idx++) {
                     const from = pushedPassPoints[idx];
                     const to = pushedPassPoints[idx + 1];
-                    const segDist = Math.hypot(to[0] - from[0], to[1] - from[1]);
+                    const segDist = Math.hypot(
+                        to[0] - from[0],
+                        to[1] - from[1],
+                    );
                     if (segDist < 0.05) {
                         routedPassPoints.push(to);
                     } else if (
@@ -1801,6 +1842,9 @@ function generateCoveragePath(
 
             // Append routedPassPoints to perimeterPathRotated
             if (routedPassPoints.length > 0) {
+                if (isReversedPass) {
+                    hasGeneratedReversedLap = true;
+                }
                 if (perimeterPathRotated.length > 0) {
                     // Transition from previous pass's end to current pass's start
                     const prevEnd = perimeterPathRotated.at(-1);
@@ -1840,7 +1884,9 @@ function generateCoveragePath(
                 }
             }
         }
-        perimeterPathRotated = removeSharpPeaks(perimeterPathRotated);
+        if (!reverseSpiral) {
+            perimeterPathRotated = removeSharpPeaks(perimeterPathRotated);
+        }
         perimeterPathRotated = condenseCollinearPoints(
             perimeterPathRotated,
             0.01,
@@ -1849,7 +1895,9 @@ function generateCoveragePath(
 
     // §4.3 Build grid coverage map (Eq. 7) and generate boustrophedon strips
     const gridData = spiralMode ? null : buildGrid(perimR, exR, laneWidth);
-    const strips = spiralMode ? [] : generateStrips(gridData, laneWidth, perimR, exR);
+    const strips = spiralMode
+        ? []
+        : generateStrips(gridData, laneWidth, perimR, exR);
 
     // Get final perimeter passes in original space (safely pushed outside obstacles)
     let safePerimeterPath = [];
@@ -1878,8 +1926,10 @@ function generateCoveragePath(
             if (perimeterPathRotated.length > 1) {
                 for (let i = 0; i < perimeterPathRotated.length - 1; i++) {
                     perimeterDistM += Math.hypot(
-                        perimeterPathRotated[i + 1][0] - perimeterPathRotated[i][0],
-                        perimeterPathRotated[i + 1][1] - perimeterPathRotated[i][1],
+                        perimeterPathRotated[i + 1][0] -
+                            perimeterPathRotated[i][0],
+                        perimeterPathRotated[i + 1][1] -
+                            perimeterPathRotated[i][1],
                     );
                 }
             }
