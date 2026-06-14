@@ -112,6 +112,41 @@ body {
     border-radius: 2px;
 }
 
+.sidebar-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.github-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: var(--transition-smooth);
+}
+
+.github-link:hover {
+    color: var(--text);
+}
+
+.github-icon {
+    width: 16px;
+    height: 16px;
+    transition: var(--transition-smooth);
+}
+
+.github-link:hover .github-icon {
+    transform: scale(1.1);
+    color: var(--accent);
+    filter: drop-shadow(0 0 4px var(--accent-glow));
+}
+
 /* ── Nav sections ────────────────────────────────────── */
 
 .nav-section {
