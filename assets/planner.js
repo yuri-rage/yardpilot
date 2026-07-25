@@ -1005,22 +1005,18 @@ function buildVoronoiRoadmap(
     for (const i of freeIdxs) {
         const target = verts[i];
         const neighbors = [];
-        const maxCandidates = N_KNN * 4;
-
         for (const j of freeIdxs) {
             if (j === i) continue;
             const d = Math.hypot(
                 verts[j][0] - target[0],
                 verts[j][1] - target[1],
             );
-
-            if (neighbors.length < maxCandidates) {
-                neighbors.push({ j, d });
-                neighbors.sort((a, b) => a.d - b.d);
-            } else if (d < neighbors[maxCandidates - 1].d) {
-                neighbors[maxCandidates - 1] = { j, d };
-                neighbors.sort((a, b) => a.d - b.d);
-            }
+            neighbors.push({ j, d });
+        }
+        neighbors.sort((a, b) => a.d - b.d);
+        const maxCandidates = N_KNN * 4;
+        if (neighbors.length > maxCandidates) {
+            neighbors.length = maxCandidates;
         }
 
         let connected = 0;
@@ -1149,17 +1145,14 @@ function routeTransition(
     for (const qi of [0, 1]) {
         const target = pts[qi];
         const dists = [];
-        const maxCandidates = N_KNN * 4;
-
         for (let i = 0; i < ns; i++) {
             const d = Math.hypot(sv[i][0] - target[0], sv[i][1] - target[1]);
-            if (dists.length < maxCandidates) {
-                dists.push({ i, d });
-                dists.sort((a, b) => a.d - b.d);
-            } else if (d < dists[maxCandidates - 1].d) {
-                dists[maxCandidates - 1] = { i, d };
-                dists.sort((a, b) => a.d - b.d);
-            }
+            dists.push({ i, d });
+        }
+        dists.sort((a, b) => a.d - b.d);
+        const maxCandidates = N_KNN * 4;
+        if (dists.length > maxCandidates) {
+            dists.length = maxCandidates;
         }
 
         let connected = 0;
@@ -1215,7 +1208,48 @@ function routeTransition(
     }
 
     const idxPath = dijkstra(adj, 0, 1, n);
-    return idxPath ? idxPath.map((i) => pts[i]) : [from, to]; // fallback: direct
+    if (!idxPath) return [from, to];
+
+    let path = idxPath.map((i) => pts[i]);
+
+    // Greedy path smoothing (short-cutting)
+    if (path.length > 2) {
+        const smoothed = [path[0]];
+        let curr = 0;
+        while (curr < path.length - 1) {
+            let next = curr + 1;
+            for (let i = path.length - 1; i > curr + 1; i--) {
+                const p1 = path[curr];
+                const p2 = path[i];
+                const p1InTol =
+                    perimR_tolerance.length >= 3 &&
+                    pointInPoly(p1, perimR_tolerance);
+                const p2InTol =
+                    perimR_tolerance.length >= 3 &&
+                    pointInPoly(p2, perimR_tolerance);
+                const useTol = p1InTol && p2InTol;
+                if (
+                    segmentFree(
+                        p1,
+                        p2,
+                        useTol ? perimR_tolerance : perimR,
+                        exR,
+                        exRC,
+                        useTol ? perimBBox_tolerance : perimBBox,
+                        exBBoxes,
+                        exCBBoxes,
+                    )
+                ) {
+                    next = i;
+                    break;
+                }
+            }
+            smoothed.push(path[next]);
+            curr = next;
+        }
+        path = smoothed;
+    }
+    return path;
 }
 
 function pathLength(path) {
@@ -1551,6 +1585,7 @@ function generateCoveragePath(
     // Tolerance buffer for outer perimeter safety check (transition paths)
     const perimSafetyDist = Math.max(0.05, 0.5 * laneWidth - tolerance);
     const perimOuterR_tolerance = insetPoly(perimOuterR, perimSafetyDist);
+    const perimOuterR_expanded = expandPoly(perimOuterR, 0.01);
     const perimBBox_tolerance = getBBox(perimOuterR_tolerance);
 
     // In sweep space, the outer perimeter already has exclusions subtracted
@@ -1658,9 +1693,15 @@ function generateCoveragePath(
 
         const spacing = Math.max(laneWidth / 4, 0.5);
 
-        const isPointFree = (pt) => {
+        const isPointFree = (pt, nominalDist) => {
             for (const ex of exR_tolerance) {
                 if (pointInPoly(pt, ex)) return false;
+            }
+            if (nominalDist < perimSafetyDist) {
+                return (
+                    perimOuterR_expanded.length < 3 ||
+                    pointInPoly(pt, perimOuterR_expanded)
+                );
             }
             return (
                 perimOuterR_tolerance.length < 3 ||
@@ -1687,9 +1728,14 @@ function generateCoveragePath(
             };
         });
 
+        let prevNominalDist = null;
         for (let p = 0; p < computedNPasses; p++) {
             const passPoints = [];
             const isReversedPass = spiralMode && reverseSpiral && p >= nPasses;
+            const shift = nPasses > 0 ? 1 : 0;
+            const nominalDist = isReversedPass
+                ? (p - shift) * laneWidth
+                : p * laneWidth;
 
             if (isReversedPass) {
                 const shift = nPasses > 0 ? 1 : 0;
@@ -1720,7 +1766,8 @@ function generateCoveragePath(
 
                         if (hasGeneratedReversedLap && i === M - 1) {
                             dist = (p - shift - 1 + k / n) * laneWidth;
-                            currentYardInset = insetPoly(perimOuterR, dist);
+                            currentYardInset =
+                                yardInsetLaps[Math.max(0, p - shift - 1)];
                         } else {
                             dist = (p - shift) * laneWidth;
                             currentYardInset =
@@ -1806,7 +1853,7 @@ function generateCoveragePath(
 
                         if (p > 0 && i === 0) {
                             dist = (p - 1 + k / n) * laneWidth;
-                            currentYardInset = insetPoly(perimOuterR, dist);
+                            currentYardInset = yardInsetLaps[p - 1];
                         } else {
                             dist = p * laneWidth;
                             currentYardInset = yardInsetLaps[p];
@@ -1863,7 +1910,9 @@ function generateCoveragePath(
             }
 
             // Check if this pass has any free points
-            const hasFreePoint = passPoints.some((pt) => isPointFree(pt));
+            const hasFreePoint = passPoints.some((pt) =>
+                isPointFree(pt, nominalDist),
+            );
             if (!hasFreePoint) {
                 continue;
             }
@@ -1890,10 +1939,14 @@ function generateCoveragePath(
                         segmentFree(
                             from,
                             to,
-                            perimOuterR_tolerance,
+                            nominalDist < perimSafetyDist
+                                ? perimOuterR_expanded
+                                : perimOuterR_tolerance,
                             exR_tolerance,
                             exRC_tolerance,
-                            perimBBox_tolerance,
+                            nominalDist < perimSafetyDist
+                                ? null
+                                : perimBBox_tolerance,
                             exBBoxes_tolerance,
                             exCBBoxes_tolerance,
                         )
@@ -1927,14 +1980,20 @@ function generateCoveragePath(
                     // Transition from previous pass's end to current pass's start
                     const prevEnd = perimeterPathRotated.at(-1);
                     const currStart = routedPassPoints[0];
+                    const useExpanded =
+                        (prevNominalDist !== null &&
+                            prevNominalDist < perimSafetyDist) ||
+                        nominalDist < perimSafetyDist;
                     if (
                         segmentFree(
                             prevEnd,
                             currStart,
-                            perimOuterR_tolerance,
+                            useExpanded
+                                ? perimOuterR_expanded
+                                : perimOuterR_tolerance,
                             exR_tolerance,
                             exRC_tolerance,
-                            perimBBox_tolerance,
+                            useExpanded ? null : perimBBox_tolerance,
                             exBBoxes_tolerance,
                             exCBBoxes_tolerance,
                         )
@@ -1960,6 +2019,7 @@ function generateCoveragePath(
                 } else {
                     perimeterPathRotated.push(...routedPassPoints);
                 }
+                prevNominalDist = nominalDist;
             }
         }
         if (!reverseSpiral) {
