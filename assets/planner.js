@@ -1552,61 +1552,72 @@ function removeSharpPeaks(pts) {
 
 function condenseCollinearPoints(pts, tolerance = 0.01) {
     if (pts.length < 2) return pts.slice();
-    if (tolerance > 0.05) {
-        const result = [];
-        let i = 0;
-        while (i < pts.length) {
+
+    // Stage 1: remove collinear points with a tight tolerance (2cm when tolerance > 0.05, else tolerance)
+    const collinearTolerance =
+        tolerance > 0.05 ? 0.02 : Math.max(0.01, tolerance);
+
+    let collinearRemoved = pts.slice();
+    if (pts.length >= 3) {
+        const result = [pts[0]];
+        let lastKeptIdx = 0;
+        for (let i = 1; i < pts.length; i++) {
             if (i === pts.length - 1) {
                 result.push(pts[i]);
+                break;
+            }
+
+            let ok = true;
+            const segmentStart = pts[lastKeptIdx];
+            const segmentEnd = pts[i + 1];
+
+            for (let j = lastKeptIdx + 1; j <= i; j++) {
+                const dSq = getSquareSegmentDistance(
+                    pts[j],
+                    segmentStart,
+                    segmentEnd,
+                );
+                if (dSq > collinearTolerance * collinearTolerance) {
+                    ok = false;
+                    break;
+                }
+            }
+
+            if (!ok) {
+                result.push(pts[i]);
+                lastKeptIdx = i;
+            }
+        }
+        collinearRemoved = result;
+    }
+
+    // Stage 2: pairwise combine consecutive close vertices if custom tolerance is active
+    if (tolerance > 0.05) {
+        const finalResult = [];
+        let i = 0;
+        const n = collinearRemoved.length;
+        while (i < n) {
+            if (i === n - 1) {
+                finalResult.push(collinearRemoved[i]);
                 i++;
                 break;
             }
-            const p1 = pts[i];
-            const p2 = pts[i + 1];
+            const p1 = collinearRemoved[i];
+            const p2 = collinearRemoved[i + 1];
             const d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
             if (d < tolerance) {
                 const avg = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
-                result.push(avg);
+                finalResult.push(avg);
                 i += 2;
             } else {
-                result.push(p1);
+                finalResult.push(p1);
                 i++;
             }
         }
-        return result;
+        return finalResult;
     }
 
-    if (pts.length < 3) return pts.slice();
-    const result = [pts[0]];
-    let lastKeptIdx = 0;
-    for (let i = 1; i < pts.length; i++) {
-        if (i === pts.length - 1) {
-            result.push(pts[i]);
-            break;
-        }
-
-        let ok = true;
-        const segmentStart = pts[lastKeptIdx];
-        const segmentEnd = pts[i + 1];
-
-        for (let j = lastKeptIdx + 1; j <= i; j++) {
-            const dSq = getSquareSegmentDistance(
-                pts[j],
-                segmentStart,
-                segmentEnd,
-            );
-            if (dSq > tolerance * tolerance) {
-                ok = false;
-                break;
-            }
-        }
-
-        if (!ok) {
-            result.push(pts[i]);
-            lastKeptIdx = i;
-        }
-    }
-    return result;
+    return collinearRemoved;
 }
 
 function getPolygonArea(poly) {
@@ -2080,11 +2091,10 @@ function generateCoveragePath(
             } else {
                 // CW traversal: poly[0] -> poly[1] -> ... -> poly[M-1] -> poly[0]
                 const isLastForward = reverseSpiral && p === nPasses - 1;
-                const segmentsCount = isLastForward ? M + 1 : M;
-                for (let i = 0; i < segmentsCount; i++) {
-                    const p1 = poly[i % M];
+                for (let i = 0; i < M; i++) {
+                    const p1 = poly[i];
                     const p2 = poly[(i + 1) % M];
-                    const sv1 = origShiftVectors[i % M];
+                    const sv1 = origShiftVectors[i];
                     const sv2 = origShiftVectors[(i + 1) % M];
 
                     const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
@@ -2139,11 +2149,12 @@ function generateCoveragePath(
                     }
                 }
 
-                // Close the loop for this pass
-                {
-                    const targetIdx = isLastForward ? 1 : 0;
-                    const pt = poly[targetIdx];
-                    const sv = origShiftVectors[targetIdx];
+                // Close the loop: always land at poly[0], then for the last
+                // forward pass also append poly[1] so the reversal can begin
+                // seamlessly at that vertex without retracing.
+                for (const closeIdx of isLastForward ? [0, 1] : [0]) {
+                    const pt = poly[closeIdx];
+                    const sv = origShiftVectors[closeIdx];
                     const dist = p * laneWidth;
                     const offset = [pt[0] + sv[0] * dist, pt[1] + sv[1] * dist];
                     let finalPt = offset;
@@ -2301,13 +2312,10 @@ function generateCoveragePath(
 
     if (!strips.length) {
         if (computedNPasses > 0) {
-            let finalPathMetric = safePerimeterPath;
-            if (combineWaypoints > 0) {
-                finalPathMetric = condenseCollinearPoints(
-                    finalPathMetric,
-                    combineWaypoints,
-                );
-            }
+            const finalPathMetric = condenseCollinearPoints(
+                safePerimeterPath,
+                combineWaypoints,
+            );
             const path = finalPathMetric.map(([x, y]) =>
                 fromLocal(x, y, oLat, oLon),
             );
@@ -2506,12 +2514,10 @@ function generateCoveragePath(
         finalPathMetric = rotPts(fullPath, angle);
     }
 
-    if (combineWaypoints > 0) {
-        finalPathMetric = condenseCollinearPoints(
-            finalPathMetric,
-            combineWaypoints,
-        );
-    }
+    finalPathMetric = condenseCollinearPoints(
+        finalPathMetric,
+        combineWaypoints,
+    );
 
     const path = finalPathMetric.map(([x, y]) => fromLocal(x, y, oLat, oLon));
 
