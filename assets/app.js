@@ -119,6 +119,16 @@ const UNIT_INPUTS = {
         metricLabel: "Transition tolerance (m)",
         imperialLabel: "Transition tolerance (ft)",
     },
+    "input-combine-waypoints": {
+        type: "length",
+        step_m: 0.01,
+        step_imp: 0.05,
+        dec_m: 2,
+        dec_imp: 2,
+        labelEl: null,
+        metricLabel: "Combine waypoints within (m)",
+        imperialLabel: "Combine waypoints within (ft)",
+    },
     "input-headland-margin": {
         type: "length",
         step_m: 0.05,
@@ -201,6 +211,20 @@ function applyUnitsToInputs(metricSnapshot) {
             if (span) span.textContent = labelText;
         }
     }
+    validateCombineWaypoints();
+}
+
+function validateCombineWaypoints() {
+    const combineDist = getMetricValue("input-combine-waypoints");
+    const laneWidth = getMetricValue("input-lane-width");
+    const warningEl = document.getElementById("combine-waypoints-warning");
+    if (warningEl) {
+        if (combineDist > 0 && combineDist >= laneWidth) {
+            warningEl.style.display = "block";
+        } else {
+            warningEl.style.display = "none";
+        }
+    }
 }
 
 // ── LocalStorage persistence ─────────────────────────────
@@ -212,6 +236,7 @@ function saveSettings() {
         exclusionBuffer: getMetricValue("input-exclusion-buffer"),
         transitionTolerance: getMetricValue("input-transition-tolerance"),
         headlandMargin: getMetricValue("input-headland-margin"),
+        combineWaypoints: getMetricValue("input-combine-waypoints"),
         skipLanes:
             Number.parseInt(
                 document.getElementById("input-skip-lanes").value,
@@ -240,6 +265,7 @@ function saveSettings() {
         units: currentUnits,
     };
     localStorage.setItem("yardpilot_settings", JSON.stringify(settings));
+    validateCombineWaypoints();
 }
 
 function updateSpiralModeUI() {
@@ -286,6 +312,7 @@ function getStoredMetricValue(id) {
             "input-lane-width": "laneWidth",
             "input-exclusion-buffer": "exclusionBuffer",
             "input-transition-tolerance": "transitionTolerance",
+            "input-combine-waypoints": "combineWaypoints",
             "input-target-speed": "targetSpeed",
             "input-altitude": "altitude",
             "input-headland-margin": "headlandMargin",
@@ -332,6 +359,11 @@ function loadSettings() {
             setDisplayValue("input-headland-margin", settings.headlandMargin);
         if (settings.altitude !== undefined)
             setDisplayValue("input-altitude", settings.altitude);
+        if (settings.combineWaypoints !== undefined)
+            setDisplayValue(
+                "input-combine-waypoints",
+                settings.combineWaypoints,
+            );
 
         if (settings.skipLanes !== undefined)
             document.getElementById("input-skip-lanes").value =
@@ -396,6 +428,7 @@ function loadSettings() {
 
         // Apply labels and steps to all unit inputs
         applyUnitsToInputs();
+        validateCombineWaypoints();
     } catch (e) {
         console.error("Failed to load settings", e);
     }
@@ -494,6 +527,7 @@ const settingInputs = [
     "checkbox-spiral-mode",
     "checkbox-reverse-spiral",
     "input-headland-margin",
+    "input-combine-waypoints",
 ];
 for (const id of settingInputs) {
     document.getElementById(id).addEventListener("change", saveSettings);
@@ -919,6 +953,8 @@ document.getElementById("btn-generate").addEventListener("click", () => {
         "checkbox-reverse-spiral",
     ).checked;
 
+    const combineWaypoints = getMetricValue("input-combine-waypoints") || 0;
+
     const result = generateCoveragePath(
         zones.perimeter.coords,
         allShapes,
@@ -934,6 +970,7 @@ document.getElementById("btn-generate").addEventListener("click", () => {
         spiralMode,
         reverseSpiral,
         headlandMargin,
+        combineWaypoints,
     );
     if (!result) return;
 

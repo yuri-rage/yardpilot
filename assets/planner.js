@@ -239,6 +239,165 @@ function segmentFree(
     return true;
 }
 
+function getSquareSegmentDistance(p, a, b) {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    if (dx === 0 && dy === 0) {
+        return (p[0] - a[0]) * (p[0] - a[0]) + (p[1] - a[1]) * (p[1] - a[1]);
+    }
+    let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy);
+    t = Math.max(0, Math.min(1, t));
+    const prx = a[0] + t * dx;
+    const pry = a[1] + t * dy;
+    return (p[0] - prx) * (p[0] - prx) + (p[1] - pry) * (p[1] - pry);
+}
+
+function simplifyPath(path, tolerance) {
+    if (path.length <= 2) return path.slice();
+    const result = [path[0]];
+    let lastKeptIdx = 0;
+
+    for (let i = 1; i < path.length; i++) {
+        if (i === path.length - 1) {
+            result.push(path[i]);
+            break;
+        }
+
+        let ok = true;
+        const segmentStart = path[lastKeptIdx];
+        const segmentEnd = path[i + 1];
+
+        for (let j = lastKeptIdx + 1; j <= i; j++) {
+            const dSq = getSquareSegmentDistance(
+                path[j],
+                segmentStart,
+                segmentEnd,
+            );
+            if (dSq > tolerance * tolerance) {
+                ok = false;
+                break;
+            }
+        }
+
+        if (!ok) {
+            result.push(path[i]);
+            lastKeptIdx = i;
+        }
+    }
+    return result;
+}
+
+function simplifyGreedy(points, tolerance) {
+    if (points.length <= 2) return points.slice();
+
+    if (tolerance > 0.05) {
+        const result = [];
+        let i = 0;
+        const n = points.length;
+        while (i < n) {
+            if (i === n - 1) {
+                const p1 = points[i];
+                const p2 = points[0];
+                const d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+                if (d < tolerance) {
+                    const avg = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+                    result.push(avg);
+                    i += 2;
+                } else {
+                    result.push(p1);
+                    i++;
+                }
+            } else {
+                const p1 = points[i];
+                const p2 = points[i + 1];
+                const d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+                if (d < tolerance) {
+                    const avg = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+                    result.push(avg);
+                    i += 2;
+                } else {
+                    result.push(p1);
+                    i++;
+                }
+            }
+        }
+        if (result.length >= 3) {
+            return result;
+        }
+    }
+
+    let currentTolerance = tolerance;
+    for (let attempt = 0; attempt < 10; attempt++) {
+        // 1. Pre-collapse points that are extremely close (within 20% of tolerance)
+        const epsilon = currentTolerance * 0.2;
+        const collapsed = [points[0]];
+        for (let i = 1; i < points.length; i++) {
+            const prev = collapsed[collapsed.length - 1];
+            const curr = points[i];
+            if (Math.hypot(curr[0] - prev[0], curr[1] - prev[1]) > epsilon) {
+                collapsed.push(curr);
+            }
+        }
+        if (collapsed.length > 2) {
+            const first = collapsed[0];
+            const last = collapsed[collapsed.length - 1];
+            if (Math.hypot(last[0] - first[0], last[1] - first[1]) <= epsilon) {
+                collapsed.pop();
+            }
+        }
+
+        if (collapsed.length < 3) {
+            currentTolerance /= 2;
+            continue;
+        }
+
+        // 2. Find the two furthest vertices to split the closed polygon
+        let maxDistSq = 0;
+        let idx1 = 0;
+        let idx2 = 1;
+        const n = collapsed.length;
+        for (let i = 0; i < n; i++) {
+            for (let j = i + 1; j < n; j++) {
+                const dx = collapsed[i][0] - collapsed[j][0];
+                const dy = collapsed[i][1] - collapsed[j][1];
+                const distSq = dx * dx + dy * dy;
+                if (distSq > maxDistSq) {
+                    maxDistSq = distSq;
+                    idx1 = i;
+                    idx2 = j;
+                }
+            }
+        }
+
+        // Ensure idx1 < idx2
+        if (idx1 > idx2) {
+            const tmp = idx1;
+            idx1 = idx2;
+            idx2 = tmp;
+        }
+
+        // Path 1: from idx1 to idx2
+        const path1 = collapsed.slice(idx1, idx2 + 1);
+        // Path 2: from idx2 to idx1 (wrapping around)
+        const path2 = collapsed
+            .slice(idx2)
+            .concat(collapsed.slice(0, idx1 + 1));
+
+        // Simplify each path
+        const sim1 = simplifyPath(path1, currentTolerance);
+        const sim2 = simplifyPath(path2, currentTolerance);
+
+        // Join simplified paths back into a closed polygon
+        const joined = sim1.slice(0, -1).concat(sim2.slice(0, -1));
+
+        if (joined.length >= 3) {
+            return joined;
+        }
+        currentTolerance /= 2;
+    }
+    return points.slice();
+}
+
 // ── Zone geometry helpers ──────────────────────────────────
 
 function isPolygonCW(poly) {
@@ -1320,6 +1479,45 @@ function pushPointOutsideExclusions(pt, exData) {
     return currentPt;
 }
 
+function removeLoopsAndBacktracks(path, threshold = 0.2) {
+    if (path.length < 3) return path.slice();
+    const result = path.slice();
+    let changed = true;
+    let iterations = 0;
+    while (changed && iterations < 15) {
+        changed = false;
+        iterations++;
+        const n = result.length;
+        for (let i = 0; i < n - 2; i++) {
+            const p1 = result[i];
+            const maxJ = Math.min(n, i + 10);
+            for (let j = maxJ - 1; j > i + 1; j--) {
+                const p2 = result[j];
+                const d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+                if (d < threshold) {
+                    result.splice(i + 1, j - i - 1);
+                    changed = true;
+                    break;
+                }
+            }
+            if (changed) break;
+        }
+    }
+
+    const finalResult = [];
+    if (result.length > 0) {
+        finalResult.push(result[0]);
+        for (let i = 1; i < result.length; i++) {
+            const last = finalResult[finalResult.length - 1];
+            const curr = result[i];
+            if (Math.hypot(curr[0] - last[0], curr[1] - last[1]) > 1e-9) {
+                finalResult.push(curr);
+            }
+        }
+    }
+    return finalResult;
+}
+
 function removeSharpPeaks(pts) {
     const result = pts.slice();
     let changed = true;
@@ -1353,20 +1551,61 @@ function removeSharpPeaks(pts) {
 }
 
 function condenseCollinearPoints(pts, tolerance = 0.01) {
+    if (pts.length < 2) return pts.slice();
+    if (tolerance > 0.05) {
+        const result = [];
+        let i = 0;
+        while (i < pts.length) {
+            if (i === pts.length - 1) {
+                result.push(pts[i]);
+                i++;
+                break;
+            }
+            const p1 = pts[i];
+            const p2 = pts[i + 1];
+            const d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+            if (d < tolerance) {
+                const avg = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+                result.push(avg);
+                i += 2;
+            } else {
+                result.push(p1);
+                i++;
+            }
+        }
+        return result;
+    }
+
     if (pts.length < 3) return pts.slice();
     const result = [pts[0]];
-    for (let i = 1; i < pts.length - 1; i++) {
-        const prev = result[result.length - 1];
-        const curr = pts[i];
-        const next = pts[i + 1];
+    let lastKeptIdx = 0;
+    for (let i = 1; i < pts.length; i++) {
+        if (i === pts.length - 1) {
+            result.push(pts[i]);
+            break;
+        }
 
-        const cp = getClosestPointOnSegment(curr, prev, next);
-        const dist = Math.hypot(curr[0] - cp[0], curr[1] - cp[1]);
-        if (dist > tolerance) {
-            result.push(curr);
+        let ok = true;
+        const segmentStart = pts[lastKeptIdx];
+        const segmentEnd = pts[i + 1];
+
+        for (let j = lastKeptIdx + 1; j <= i; j++) {
+            const dSq = getSquareSegmentDistance(
+                pts[j],
+                segmentStart,
+                segmentEnd,
+            );
+            if (dSq > tolerance * tolerance) {
+                ok = false;
+                break;
+            }
+        }
+
+        if (!ok) {
+            result.push(pts[i]);
+            lastKeptIdx = i;
         }
     }
-    result.push(pts[pts.length - 1]);
     return result;
 }
 
@@ -1443,6 +1682,7 @@ function generateCoveragePath(
     spiralMode = false,
     reverseSpiral = false,
     headlandMargin = 0,
+    combineWaypoints = 0,
 ) {
     if (perimCoords.length < 3) return null;
 
@@ -1451,11 +1691,18 @@ function generateCoveragePath(
     const xy = ([lat, lon]) => toLocal(lat, lon, oLat, oLon);
 
     // Project perimeter; drop closing duplicate if present
-    const perim = perimCoords.map(xy);
+    let perim = perimCoords.map(xy);
     if (perim.length > 1) {
         const [fx, fy] = perim[0];
         const [lx, ly] = perim.at(-1);
         if (Math.hypot(fx - lx, fy - ly) < 0.01) perim.pop();
+    }
+
+    if (combineWaypoints > 0) {
+        const simplifiedPerim = simplifyGreedy(perim, combineWaypoints);
+        if (simplifiedPerim.length >= 3) {
+            perim = simplifiedPerim;
+        }
     }
 
     // Project + buffer each exclusion zone
@@ -1464,7 +1711,18 @@ function generateCoveragePath(
             const [cx, cy] = toLocal(s.lat, s.lon, oLat, oLon);
             return circlePoly(cx, cy, s.radius + buffer, circleSegments);
         }
-        const poly = s.vertices.map(xy);
+        let poly = s.vertices.map(xy);
+        if (poly.length > 1) {
+            const [fx, fy] = poly[0];
+            const [lx, ly] = poly.at(-1);
+            if (Math.hypot(fx - lx, fy - ly) < 0.01) poly.pop();
+        }
+        if (combineWaypoints > 0) {
+            const simplifiedEx = simplifyGreedy(poly, combineWaypoints);
+            if (simplifiedEx.length >= 3) {
+                poly = simplifiedEx;
+            }
+        }
         return buffer > 0 ? expandPoly(poly, buffer) : poly;
     });
 
@@ -1635,7 +1893,6 @@ function generateCoveragePath(
 
     // Generate perimeter passes in rotated space for clean collision checking
     let perimeterPathRotated = [];
-    let hasGeneratedReversedLap = false;
     if (computedNPasses > 0) {
         const poly = [...navigablePerimeterRotated];
         if (isPolygonCW(poly) !== (direction === "CW")) {
@@ -1732,19 +1989,15 @@ function generateCoveragePath(
         for (let p = 0; p < computedNPasses; p++) {
             const passPoints = [];
             const isReversedPass = spiralMode && reverseSpiral && p >= nPasses;
-            const shift = nPasses > 0 ? 1 : 0;
-            const nominalDist = isReversedPass
-                ? (p - shift) * laneWidth
-                : p * laneWidth;
+            const nominalDist = p * laneWidth;
 
             if (isReversedPass) {
-                const shift = nPasses > 0 ? 1 : 0;
-                // CCW traversal: poly[M-1] -> poly[M-2] -> ... -> poly[0] -> poly[M-1]
-                for (let i = M - 1; i >= 0; i--) {
-                    const p1 = poly[i];
-                    const p2 = poly[(i - 1 + M) % M];
-                    const sv1 = origShiftVectors[i];
-                    const sv2 = origShiftVectors[(i - 1 + M) % M];
+                // CCW traversal starting at poly[1]: poly[1] -> poly[0] -> poly[M-1] -> ... -> poly[2] -> poly[1]
+                for (let i = 0; i < M; i++) {
+                    const p1 = poly[(1 - i + M) % M];
+                    const p2 = poly[(1 - i - 1 + M) % M];
+                    const sv1 = origShiftVectors[(1 - i + M) % M];
+                    const sv2 = origShiftVectors[(1 - i - 1 + M) % M];
 
                     const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
                     if (len < 1e-9) continue;
@@ -1764,14 +2017,13 @@ function generateCoveragePath(
                         let dist;
                         let currentYardInset;
 
-                        if (hasGeneratedReversedLap && i === M - 1) {
-                            dist = (p - shift - 1 + k / n) * laneWidth;
+                        if (p > 0 && i === 0) {
+                            dist = (p - 1 + k / n) * laneWidth;
                             currentYardInset =
-                                yardInsetLaps[Math.max(0, p - shift - 1)];
+                                yardInsetLaps[Math.max(0, p - 1)];
                         } else {
-                            dist = (p - shift) * laneWidth;
-                            currentYardInset =
-                                yardInsetLaps[Math.max(0, p - shift)];
+                            dist = p * laneWidth;
+                            currentYardInset = yardInsetLaps[Math.max(0, p)];
                         }
 
                         const offset = [
@@ -1799,14 +2051,14 @@ function generateCoveragePath(
                         passPoints.push(finalPt);
                     }
                 }
-                // Push the final point poly[M-1] to complete the loop
+                // Push the final point poly[1] to complete the loop
                 {
-                    const pt = poly[M - 1];
-                    const sv = origShiftVectors[M - 1];
-                    const dist = (p - shift) * laneWidth;
+                    const pt = poly[1];
+                    const sv = origShiftVectors[1];
+                    const dist = p * laneWidth;
                     const offset = [pt[0] + sv[0] * dist, pt[1] + sv[1] * dist];
                     let finalPt = offset;
-                    const targetLapIdx = Math.max(0, p - shift);
+                    const targetLapIdx = Math.max(0, p);
                     if (!pointInPoly(finalPt, yardInsetLaps[targetLapIdx])) {
                         if (
                             yardInsetLaps[targetLapIdx] &&
@@ -1826,11 +2078,13 @@ function generateCoveragePath(
                     passPoints.push(finalPt);
                 }
             } else {
-                // CW traversal: poly[0] -> poly[1] -> ... -> poly[M-1]
-                for (let i = 0; i < M; i++) {
-                    const p1 = poly[i];
+                // CW traversal: poly[0] -> poly[1] -> ... -> poly[M-1] -> poly[0]
+                const isLastForward = reverseSpiral && p === nPasses - 1;
+                const segmentsCount = isLastForward ? M + 1 : M;
+                for (let i = 0; i < segmentsCount; i++) {
+                    const p1 = poly[i % M];
                     const p2 = poly[(i + 1) % M];
-                    const sv1 = origShiftVectors[i];
+                    const sv1 = origShiftVectors[i % M];
                     const sv2 = origShiftVectors[(i + 1) % M];
 
                     const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
@@ -1887,8 +2141,9 @@ function generateCoveragePath(
 
                 // Close the loop for this pass
                 {
-                    const pt = poly[0];
-                    const sv = origShiftVectors[0];
+                    const targetIdx = isLastForward ? 1 : 0;
+                    const pt = poly[targetIdx];
+                    const sv = origShiftVectors[targetIdx];
                     const dist = p * laneWidth;
                     const offset = [pt[0] + sv[0] * dist, pt[1] + sv[1] * dist];
                     let finalPt = offset;
@@ -1971,15 +2226,16 @@ function generateCoveragePath(
                 }
             }
 
-            // Append routedPassPoints to perimeterPathRotated
+            // Append cleanPassPoints to perimeterPathRotated
             if (routedPassPoints.length > 0) {
-                if (isReversedPass) {
-                    hasGeneratedReversedLap = true;
-                }
+                const cleanPassPoints = removeLoopsAndBacktracks(
+                    routedPassPoints,
+                    Math.min(0.2, laneWidth * 0.3),
+                );
                 if (perimeterPathRotated.length > 0) {
                     // Transition from previous pass's end to current pass's start
                     const prevEnd = perimeterPathRotated.at(-1);
-                    const currStart = routedPassPoints[0];
+                    const currStart = cleanPassPoints[0];
                     const useExpanded =
                         (prevNominalDist !== null &&
                             prevNominalDist < perimSafetyDist) ||
@@ -2015,9 +2271,9 @@ function generateCoveragePath(
                         );
                         perimeterPathRotated.push(...transit.slice(1));
                     }
-                    perimeterPathRotated.push(...routedPassPoints.slice(1));
+                    perimeterPathRotated.push(...cleanPassPoints.slice(1));
                 } else {
-                    perimeterPathRotated.push(...routedPassPoints);
+                    perimeterPathRotated.push(...cleanPassPoints);
                 }
                 prevNominalDist = nominalDist;
             }
@@ -2027,7 +2283,7 @@ function generateCoveragePath(
         }
         perimeterPathRotated = condenseCollinearPoints(
             perimeterPathRotated,
-            0.01,
+            Math.max(0.01, combineWaypoints),
         );
     }
 
@@ -2045,7 +2301,13 @@ function generateCoveragePath(
 
     if (!strips.length) {
         if (computedNPasses > 0) {
-            const finalPathMetric = safePerimeterPath;
+            let finalPathMetric = safePerimeterPath;
+            if (combineWaypoints > 0) {
+                finalPathMetric = condenseCollinearPoints(
+                    finalPathMetric,
+                    combineWaypoints,
+                );
+            }
             const path = finalPathMetric.map(([x, y]) =>
                 fromLocal(x, y, oLat, oLon),
             );
@@ -2242,6 +2504,13 @@ function generateCoveragePath(
         ];
     } else {
         finalPathMetric = rotPts(fullPath, angle);
+    }
+
+    if (combineWaypoints > 0) {
+        finalPathMetric = condenseCollinearPoints(
+            finalPathMetric,
+            combineWaypoints,
+        );
     }
 
     const path = finalPathMetric.map(([x, y]) => fromLocal(x, y, oLat, oLon));
