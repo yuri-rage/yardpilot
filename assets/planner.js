@@ -707,7 +707,7 @@ function makeCW(poly) {
     return isPolygonCW(poly) ? poly.slice() : poly.slice().reverse();
 }
 
-function subtractPolygon(P_orig, E_orig) {
+function subtractPolygonAllPieces(P_orig, E_orig) {
     if (typeof ClipperLib !== "undefined") {
         try {
             const scale = 1000000;
@@ -733,20 +733,25 @@ function subtractPolygon(P_orig, E_orig) {
                 ClipperLib.PolyFillType.pftNonZero,
             );
 
-            if (solution.length > 0) {
-                let bestIdx = 0;
-                let maxArea = -1;
-                for (let i = 0; i < solution.length; i++) {
-                    const area = Math.abs(ClipperLib.Clipper.Area(solution[i]));
-                    if (area > maxArea) {
-                        maxArea = area;
-                        bestIdx = i;
-                    }
+            const pieces = [];
+            for (let i = 0; i < solution.length; i++) {
+                if (!ClipperLib.Clipper.Orientation(solution[i])) continue;
+                const area =
+                    Math.abs(ClipperLib.Clipper.Area(solution[i])) /
+                    (scale * scale);
+                if (area >= 0.1) {
+                    pieces.push(
+                        solution[i].map((pt) => [pt.X / scale, pt.Y / scale]),
+                    );
                 }
-                return solution[bestIdx].map((pt) => [
-                    pt.X / scale,
-                    pt.Y / scale,
-                ]);
+            }
+            if (pieces.length > 0) {
+                pieces.sort(
+                    (a, b) =>
+                        Math.abs(getPolygonArea(b)) -
+                        Math.abs(getPolygonArea(a)),
+                );
+                return pieces;
             }
             return [];
         } catch (e) {
@@ -824,7 +829,7 @@ function subtractPolygon(P_orig, E_orig) {
         const _E_in_P = pointInPoly(E[0], P);
         const P_in_E = pointInPoly(P[0], E);
         if (P_in_E) return []; // P is completely inside E
-        return P_orig; // E is completely inside P or disjoint
+        return [P_orig]; // E is completely inside P or disjoint
     }
 
     // Flatten lists
@@ -864,8 +869,7 @@ function subtractPolygon(P_orig, E_orig) {
     }
 
     const enteringNodes = flatP.filter((n) => n.isIntersection && n.isEntering);
-    let bestPoly = [];
-    let maxArea = -1;
+    const pieces = [];
     const visitedEntering = new Set();
 
     for (const startNode of enteringNodes) {
@@ -919,14 +923,33 @@ function subtractPolygon(P_orig, E_orig) {
             cleaned.pop();
         }
         const area = Math.abs(getPolygonArea(cleaned));
-        if (cleaned.length >= 3 && area > maxArea && area >= 0.1) {
-            maxArea = area;
-            bestPoly = cleaned;
+        if (cleaned.length >= 3 && area >= 0.1) {
+            pieces.push(makeCW(cleaned));
         }
     }
 
-    if (maxArea >= 0.1) return bestPoly;
+    if (pieces.length > 0) {
+        pieces.sort(
+            (a, b) => Math.abs(getPolygonArea(b)) - Math.abs(getPolygonArea(a)),
+        );
+        return pieces;
+    }
     return [];
+}
+
+function subtractPolygonsMulti(pieces, ex) {
+    const nextPieces = [];
+    for (const piece of pieces) {
+        const res = subtractPolygonAllPieces(piece, ex);
+        if (res.length > 0) {
+            for (const r of res) {
+                if (r.length >= 3 && Math.abs(getPolygonArea(r)) >= 0.1) {
+                    nextPieces.push(r);
+                }
+            }
+        }
+    }
+    return nextPieces;
 }
 
 function expandPoly(poly, dist) {
@@ -1542,7 +1565,7 @@ function buildVisibilityGraph(
             const v1 = [pCurr[0] - pPrev[0], pCurr[1] - pPrev[1]];
             const v2 = [pNext[0] - pCurr[0], pNext[1] - pCurr[1]];
             const cross = v1[0] * v2[1] - v1[1] * v2[0];
-            const isReflex = cw ? cross < 0 : cross > 0;
+            const isReflex = cw ? cross > 0 : cross < 0;
             if (isReflex || M <= 20) {
                 const l1 = Math.hypot(v1[0], v1[1]);
                 const l2 = Math.hypot(v2[0], v2[1]);
@@ -2120,6 +2143,53 @@ function getPolygonArea(poly) {
     return 0.5 * Math.abs(area);
 }
 
+function polygonOverlapsPolygon(polyA, polyB) {
+    if (!polyA || !polyB || polyA.length < 3 || polyB.length < 3) return false;
+    let minAx = Infinity,
+        maxAx = -Infinity,
+        minAy = Infinity,
+        maxAy = -Infinity;
+    for (let i = 0; i < polyA.length; i++) {
+        const x = polyA[i][0];
+        const y = polyA[i][1];
+        if (x < minAx) minAx = x;
+        if (x > maxAx) maxAx = x;
+        if (y < minAy) minAy = y;
+        if (y > maxAy) maxAy = y;
+    }
+    let minBx = Infinity,
+        maxBx = -Infinity,
+        minBy = Infinity,
+        maxBy = -Infinity;
+    for (let i = 0; i < polyB.length; i++) {
+        const x = polyB[i][0];
+        const y = polyB[i][1];
+        if (x < minBx) minBx = x;
+        if (x > maxBx) maxBx = x;
+        if (y < minBy) minBy = y;
+        if (y > maxBy) maxBy = y;
+    }
+    if (maxAx < minBx || maxBx < minAx || maxAy < minBy || maxBy < minAy) {
+        return false;
+    }
+    for (let i = 0; i < polyA.length; i++) {
+        if (pointInPoly(polyA[i], polyB)) return true;
+    }
+    for (let i = 0; i < polyB.length; i++) {
+        if (pointInPoly(polyB[i], polyA)) return true;
+    }
+    for (let i = 0; i < polyA.length; i++) {
+        const a1 = polyA[i];
+        const a2 = polyA[(i + 1) % polyA.length];
+        for (let j = 0; j < polyB.length; j++) {
+            const b1 = polyB[j];
+            const b2 = polyB[(j + 1) % polyB.length];
+            if (getSegIntersection(a1, a2, b1, b2)) return true;
+        }
+    }
+    return false;
+}
+
 function generateCoveragePath(
     perimCoords,
     exclusions,
@@ -2136,6 +2206,7 @@ function generateCoveragePath(
     reverseSpiral = false,
     headlandMargin = 0,
     combineWaypoints = 0,
+    isPiece = false,
 ) {
     if (perimCoords.length < 3) return null;
     const warnings = [];
@@ -2181,25 +2252,181 @@ function generateCoveragePath(
     });
 
     // Subtract intersecting exclusion zones from perimeter in local metric space
-    let navigablePerimeter = perim;
-    const isIntersecting = [];
-    for (const ex of exPolys) {
-        const nextPoly = subtractPolygon(navigablePerimeter, ex);
-        const areaBefore = Math.abs(getPolygonArea(navigablePerimeter));
-        const areaAfter = Math.abs(getPolygonArea(nextPoly));
-        if (nextPoly.length >= 3 && areaAfter >= 0.1) {
-            const changed = Math.abs(areaBefore - areaAfter) > 0.01;
-            isIntersecting.push(changed);
-            navigablePerimeter = nextPoly;
-        } else {
-            isIntersecting.push(false);
-            if (areaBefore >= 0.1) {
-                warnings.push(
-                    "Boundary obstacle subtraction produced degenerate polygon; falling back to previous perimeter",
-                );
+    let navigablePerimeterPieces = [perim];
+    const isIntersecting = exclusions.map(() => false);
+    if (!isPiece) {
+        for (let eIdx = 0; eIdx < exPolys.length; eIdx++) {
+            const ex = exPolys[eIdx];
+            // Only boundary exclusions (obstacles that cross or touch the yard perimeter)
+            // can partition or cut the perimeter. Interior obstacles are handled via headlands.
+            let crossesPerim = false;
+            for (let i = 0; i < ex.length; i++) {
+                if (!pointInPoly(ex[i], perim)) {
+                    crossesPerim = true;
+                    break;
+                }
+            }
+            if (!crossesPerim) {
+                for (let i = 0; i < ex.length && !crossesPerim; i++) {
+                    const a1 = ex[i];
+                    const a2 = ex[(i + 1) % ex.length];
+                    for (let j = 0; j < perim.length; j++) {
+                        const b1 = perim[j];
+                        const b2 = perim[(j + 1) % perim.length];
+                        if (getSegIntersection(a1, a2, b1, b2)) {
+                            crossesPerim = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!crossesPerim) {
+                continue;
+            }
+
+            const nextPieces = subtractPolygonsMulti(
+                navigablePerimeterPieces,
+                ex,
+            );
+            const totalAreaBefore = navigablePerimeterPieces.reduce(
+                (sum, p) => sum + Math.abs(getPolygonArea(p)),
+                0,
+            );
+            const totalAreaAfter = nextPieces.reduce(
+                (sum, p) => sum + Math.abs(getPolygonArea(p)),
+                0,
+            );
+            if (nextPieces.length > 0 && totalAreaAfter >= 0.1) {
+                if (Math.abs(totalAreaBefore - totalAreaAfter) > 0.01) {
+                    isIntersecting[eIdx] = true;
+                }
+                navigablePerimeterPieces = nextPieces;
+            } else {
+                if (totalAreaBefore >= 0.1) {
+                    warnings.push(
+                        "Boundary obstacle subtraction produced degenerate polygon; falling back to previous perimeter",
+                    );
+                }
+            }
+        }
+    } else {
+        // In a sub-piece, the perimeter has already been partitioned by boundary exclusions.
+        // Mark only exclusions that cross or touch the piece boundary as intersecting.
+        // Fully interior obstacles inside the piece must NOT be marked so they receive headland loops.
+        for (let eIdx = 0; eIdx < exPolys.length; eIdx++) {
+            const ex = exPolys[eIdx];
+            let crosses = false;
+            for (let i = 0; i < ex.length; i++) {
+                if (!pointInPoly(ex[i], perim)) {
+                    crosses = true;
+                    break;
+                }
+            }
+            if (!crosses) {
+                for (let i = 0; i < ex.length && !crosses; i++) {
+                    const a1 = ex[i];
+                    const a2 = ex[(i + 1) % ex.length];
+                    for (let j = 0; j < perim.length; j++) {
+                        const b1 = perim[j];
+                        const b2 = perim[(j + 1) % perim.length];
+                        if (getSegIntersection(a1, a2, b1, b2)) {
+                            crosses = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (crosses) {
+                isIntersecting[eIdx] = true;
             }
         }
     }
+
+    // If boundary obstacles split the yard into multiple pieces, plan each piece as an independent mission.
+    // Disconnected pieces are returned in result.pieces[] without connecting legs across obstacles.
+    if (!isPiece && navigablePerimeterPieces.length > 1) {
+        const validPieces = [];
+        const topWarnings = [...warnings];
+
+        for (const piece of navigablePerimeterPieces) {
+            const area = Math.abs(getPolygonArea(piece));
+            if (area < 1.0) {
+                topWarnings.push(
+                    `Disconnected yard piece (${area.toFixed(1)} m²) dropped: area is too small to plan coverage`,
+                );
+                continue;
+            }
+            const pieceCoords = piece.map(([x, y]) =>
+                fromLocal(x, y, oLat, oLon),
+            );
+            const pieceExclusions = exclusions.filter((_s, idx) => {
+                const ex = exPolys[idx];
+                return polygonOverlapsPolygon(ex, piece);
+            });
+            const res = generateCoveragePath(
+                pieceCoords,
+                pieceExclusions,
+                laneWidth,
+                buffer,
+                nPasses,
+                direction,
+                tolerance,
+                skipLanes,
+                sweepMode,
+                sweepAngle,
+                circleSegments,
+                spiralMode,
+                reverseSpiral,
+                headlandMargin,
+                combineWaypoints,
+                true,
+            );
+            if (res?.path && res.path.length > 0) {
+                validPieces.push(res);
+                if (res.warnings && res.warnings.length > 0) {
+                    const pNum = validPieces.length;
+                    for (const w of res.warnings) {
+                        topWarnings.push(`Piece ${pNum}: ${w}`);
+                    }
+                }
+            } else {
+                topWarnings.push(
+                    `Disconnected yard piece (${area.toFixed(1)} m²) dropped: could not generate coverage path`,
+                );
+            }
+        }
+
+        if (validPieces.length > 0) {
+            const primary = validPieces[0];
+            const totalDistAll = validPieces.reduce(
+                (sum, p) => sum + p.totalDistM,
+                0,
+            );
+            const sweepDistAll = validPieces.reduce(
+                (sum, p) => sum + p.sweepDistM,
+                0,
+            );
+            const coveredAreaAll = validPieces.reduce(
+                (sum, p) => sum + p.coveredAreaSqM,
+                0,
+            );
+
+            return {
+                path: primary.path,
+                count: primary.count,
+                totalDistM: Math.round(totalDistAll * 10) / 10,
+                sweepDistM: Math.round(sweepDistAll * 10) / 10,
+                coveredAreaSqM: Math.round(coveredAreaAll * 10) / 10,
+                totalDistAllM: totalDistAll,
+                sweepDistAllM: sweepDistAll,
+                coveredAreaAllSqM: coveredAreaAll,
+                warnings: Array.from(new Set(topWarnings)),
+                pieces: validPieces,
+            };
+        }
+    }
+
+    let navigablePerimeter = navigablePerimeterPieces[0] || perim;
     if (
         navigablePerimeter.length < 3 ||
         Math.abs(getPolygonArea(navigablePerimeter)) < 0.1
@@ -2422,14 +2649,14 @@ function generateCoveragePath(
     // Generate perimeter passes in rotated space for clean collision checking
     let perimeterPathRotated = [];
     if (computedNPasses > 0) {
-        const poly = [...navigablePerimeterRotated];
+        let poly = [...navigablePerimeterRotated];
         if (isPolygonCW(poly) !== (direction === "CW")) {
             poly.reverse();
         }
         const M = poly.length;
 
         // Compute unit miter offset vectors for each original vertex
-        const origShiftVectors = [];
+        let origShiftVectors = [];
         const cw = isPolygonCW(poly);
         const sign = cw ? -1 : 1;
         for (let i = 0; i < M; i++) {
@@ -2469,6 +2696,46 @@ function generateCoveragePath(
                 L = sign * 4;
             }
             origShiftVectors.push([m[0] * L, m[1] * L]);
+        }
+
+        // Deliberately select start vertex far from obstacles with room for ramp
+        let bestStartIdx = 0;
+        let bestScore = Number.NEGATIVE_INFINITY;
+        for (let i = 0; i < M; i++) {
+            const A = poly[(i - 1 + M) % M];
+            const B = poly[i];
+            const nextPt = poly[(i + 1) % M];
+            const edgeLen = Math.hypot(nextPt[0] - B[0], nextPt[1] - B[1]);
+            let minDist = Number.POSITIVE_INFINITY;
+            for (const ex of exR_tolerance) {
+                if (ex.length < 3) continue;
+                const cp = getClosestPointOnPoly(B, ex);
+                const d = Math.hypot(cp[0] - B[0], cp[1] - B[1]);
+                minDist = Math.min(minDist, d);
+            }
+            const cross =
+                (B[0] - A[0]) * (nextPt[1] - B[1]) -
+                (B[1] - A[1]) * (nextPt[0] - B[0]);
+            const isConvex = cw ? cross < 0 : cross > 0;
+            let score = Math.min(minDist, 10) * 3;
+            if (minDist >= laneWidth * 1.5) score += 25;
+            else if (minDist < laneWidth * 0.5) score -= 50;
+            if (edgeLen >= laneWidth * 1.5) score += 15;
+            if (isConvex) score += 10;
+            if (score > bestScore) {
+                bestScore = score;
+                bestStartIdx = i;
+            }
+        }
+        if (bestStartIdx > 0) {
+            poly = [
+                ...poly.slice(bestStartIdx),
+                ...poly.slice(0, bestStartIdx),
+            ];
+            origShiftVectors = [
+                ...origShiftVectors.slice(bestStartIdx),
+                ...origShiftVectors.slice(0, bestStartIdx),
+            ];
         }
 
         const yardInsetLaps = [];
@@ -2819,11 +3086,16 @@ function generateCoveragePath(
                                     exCBBoxes_tolerance,
                                 );
                                 if (altTransit) {
+                                    const reorderedPass = [
+                                        ...cleanPassPoints.slice(ptIdx),
+                                        ...cleanPassPoints.slice(0, ptIdx),
+                                        cleanPassPoints[ptIdx],
+                                    ];
                                     perimeterPathRotated.push(
                                         ...altTransit.slice(1),
                                     );
                                     perimeterPathRotated.push(
-                                        ...cleanPassPoints.slice(ptIdx + 1),
+                                        ...reorderedPass.slice(1),
                                     );
                                     routed = true;
                                     break;
@@ -3441,6 +3713,9 @@ function generateCoveragePath(
                     ...transit.slice(1),
                     ...boustrophedonPath.slice(altIdx + 1),
                 ];
+                warnings.push(
+                    `Could not route transition to initial sweep strip; skipped first ${altIdx} strip point(s)`,
+                );
             } else {
                 warnings.push(
                     "Could not route transition to sweep strips; unreachable strips dropped",
@@ -3512,7 +3787,7 @@ function generateCoveragePath(
     });
     coveredAreaSqM = Math.max(0, coveredAreaSqM);
 
-    return {
+    const baseRes = {
         path,
         count: path.length,
         totalDistM,
@@ -3520,6 +3795,10 @@ function generateCoveragePath(
         coveredAreaSqM,
         warnings,
     };
+    if (!isPiece) {
+        baseRes.pieces = [baseRes];
+    }
+    return baseRes;
 }
 
 window.generateCoveragePath = generateCoveragePath;
