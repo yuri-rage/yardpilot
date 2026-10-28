@@ -1,0 +1,16 @@
+{
+    "name": "yardpilot",
+    "version": "1.0.0",
+    "description": "YardPilot: Autonomous lawn mower coverage path planner",
+    "scripts": {
+        "test": "node tests/review-harness.js",
+        "test:noclipper": "node tests/review-harness.js --noclipper",
+        "test:fuzz30": "node tests/review-harness.js --fuzz=30",
+        "test:fuzz30:noclipper": "node tests/review-harness.js --noclipper --fuzz=30",
+        "test:fuzz": "node tests/review-harness.js --fuzz=150",
+        "test:fuzz:noclipper": "node tests/review-harness.js --noclipper --fuzz=150"
+    },
+    "devDependencies": {
+        "clipper-lib": "^6.4.2"
+    }
+}

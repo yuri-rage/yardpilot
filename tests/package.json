@@ -1,0 +1,13 @@
+{
+    "name": "yardpilot-tests",
+    "version": "1.0.0",
+    "description": "Tests for YardPilot planner",
+    "private": true,
+    "scripts": {
+        "test": "node review-harness.js",
+        "test:fuzz": "node review-harness.js --fuzz=150"
+    },
+    "dependencies": {
+        "clipper-lib": "^6.4.2"
+    }
+}
