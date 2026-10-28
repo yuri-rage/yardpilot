@@ -1,6 +1,6 @@
 {
     "name": "yardpilot-tests",
-    "version": "1.0.0",
+    "version": "0.3.0-beta",
     "description": "Tests for YardPilot planner",
     "private": true,
     "scripts": {
