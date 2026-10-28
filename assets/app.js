@@ -831,8 +831,12 @@ function displayStats(result) {
     if (!result) return;
     lastResult = result;
 
-    const areaSqM = result.coveredAreaSqM;
-    const totalDistM = result.totalDistM;
+    const areaSqM = result.coveredAreaAllSqM || result.coveredAreaSqM;
+    const totalDistM = result.totalDistAllM || result.totalDistM;
+    const totalCount = result.pieces
+        ? result.pieces.reduce((s, p) => s + p.count, 0)
+        : result.count;
+    const sweepDistM = result.sweepDistAllM || result.sweepDistM;
     // Speed is always read back as metric from storage
     const speedMS = getStoredMetricValue("input-target-speed") || 1.5;
 
@@ -858,7 +862,7 @@ function displayStats(result) {
                 : `${(totalDistM * FT_PER_M).toFixed(0)} ft`;
         document.getElementById("stat-distance").textContent = distVal;
         document.getElementById("stat-distance-sub").textContent =
-            `${result.count} waypoints`;
+            `${totalCount} waypoints`;
 
         // Duration: uses m/s internally
         const durationSec = totalDistM / speedMS;
@@ -890,7 +894,7 @@ function displayStats(result) {
                 : `${totalDistM.toFixed(0)} m`;
         document.getElementById("stat-distance").textContent = distVal;
         document.getElementById("stat-distance-sub").textContent =
-            `${result.count} waypoints`;
+            `${totalCount} waypoints`;
 
         const durationSec = totalDistM / speedMS;
         const durationMin = Math.floor(durationSec / 60);
@@ -906,9 +910,34 @@ function displayStats(result) {
 
     const efficiency =
         totalDistM > 0
-            ? `${((result.sweepDistM / totalDistM) * 100).toFixed(0)}%`
+            ? `${((sweepDistM / totalDistM) * 100).toFixed(0)}%`
             : "0%";
     document.getElementById("stat-efficiency").textContent = efficiency;
+
+    const warningsEl = document.getElementById("stats-warnings");
+    if (warningsEl) {
+        const displayWarnings = [...(result.warnings || [])];
+        if (result.pieces && result.pieces.length > 1) {
+            displayWarnings.unshift(
+                `Split yard: ${result.pieces.length} disconnected pieces planned. Export will generate separate missions for each piece.`,
+            );
+        }
+        if (displayWarnings.length > 0) {
+            warningsEl.replaceChildren(
+                ...displayWarnings.map((w) => {
+                    const item = document.createElement("div");
+                    item.className = "warning-item";
+                    item.textContent = `⚠️ ${w}`;
+                    return item;
+                }),
+            );
+            warningsEl.style.display = "block";
+        } else {
+            warningsEl.style.display = "none";
+            warningsEl.replaceChildren();
+        }
+    }
+
     document.getElementById("stats-panel").style.display = "block";
 }
 
@@ -976,31 +1005,65 @@ document.getElementById("btn-generate").addEventListener("click", () => {
 
     clearPath();
     pathWaypoints = result.path;
-    pathLayer = L.polyline(result.path, PATH_STYLE).addTo(map);
+    if (result.pieces && result.pieces.length > 1) {
+        const polylineLayers = result.pieces.map((p) =>
+            L.polyline(p.path, PATH_STYLE),
+        );
+        pathLayer = L.featureGroup(polylineLayers).addTo(map);
 
-    if (result.path.length > 0) {
-        const startPt = result.path[0];
-        const endPt = result.path[result.path.length - 1];
+        const markers = [];
+        result.pieces.forEach((p, idx) => {
+            if (p.path.length > 0) {
+                const sPt = p.path[0];
+                const ePt = p.path[p.path.length - 1];
+                markers.push(
+                    L.circleMarker(sPt, {
+                        radius: 6,
+                        fillColor: "#10b981",
+                        color: "#ffffff",
+                        weight: 1.5,
+                        fillOpacity: 1,
+                    }).bindPopup(`<b>Start Piece ${idx + 1}</b>`),
+                );
+                markers.push(
+                    L.circleMarker(ePt, {
+                        radius: 6,
+                        fillColor: "#ef4444",
+                        color: "#ffffff",
+                        weight: 1.5,
+                        fillOpacity: 1,
+                    }).bindPopup(`<b>End Piece ${idx + 1}</b>`),
+                );
+            }
+        });
+        startMarker = L.featureGroup(markers).addTo(map);
+    } else {
+        pathLayer = L.polyline(result.path, PATH_STYLE).addTo(map);
 
-        startMarker = L.circleMarker(startPt, {
-            radius: 6,
-            fillColor: "#10b981",
-            color: "#ffffff",
-            weight: 1.5,
-            fillOpacity: 1,
-        })
-            .bindPopup("<b>Start Coverage</b>")
-            .addTo(map);
+        if (result.path.length > 0) {
+            const startPt = result.path[0];
+            const endPt = result.path[result.path.length - 1];
 
-        endMarker = L.circleMarker(endPt, {
-            radius: 6,
-            fillColor: "#ef4444",
-            color: "#ffffff",
-            weight: 1.5,
-            fillOpacity: 1,
-        })
-            .bindPopup("<b>End Coverage</b>")
-            .addTo(map);
+            startMarker = L.circleMarker(startPt, {
+                radius: 6,
+                fillColor: "#10b981",
+                color: "#ffffff",
+                weight: 1.5,
+                fillOpacity: 1,
+            })
+                .bindPopup("<b>Start Coverage</b>")
+                .addTo(map);
+
+            endMarker = L.circleMarker(endPt, {
+                radius: 6,
+                fillColor: "#ef4444",
+                color: "#ffffff",
+                weight: 1.5,
+                fillOpacity: 1,
+            })
+                .bindPopup("<b>End Coverage</b>")
+                .addTo(map);
+        }
     }
 
     displayStats(result);
@@ -1013,34 +1076,50 @@ document.getElementById("btn-export").addEventListener("click", () => {
     if (!pathWaypoints) return;
     // Altitude is always exported in meters — convert from display unit to metric
     const altitudeM = getMetricValue("input-altitude") || 0.0;
-    const [hLat, hLon] = pathWaypoints[0];
-    const lines = [
-        "QGC WPL 110",
-        `0\t1\t0\t16\t0\t0\t0\t0\t${hLat.toFixed(7)}\t${hLon.toFixed(7)}\t${altitudeM.toFixed(6)}\t1`,
-        ...pathWaypoints.map(
-            ([lat, lon], i) =>
-                `${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${lat.toFixed(7)}\t${lon.toFixed(7)}\t${altitudeM.toFixed(6)}\t1`,
-        ),
-    ];
-    const filename = (() => {
-        if (zones.perimeter?.name) {
-            const rawName = zones.perimeter.name;
-            const lastDotIdx = rawName.lastIndexOf(".");
-            const basename =
-                lastDotIdx !== -1 ? rawName.substring(0, lastDotIdx) : rawName;
-            return `yp_${basename}.waypoints`;
-        }
-        return "yardpilot.waypoints";
-    })();
 
-    const a = Object.assign(document.createElement("a"), {
-        href: URL.createObjectURL(
-            new Blob([lines.join("\n")], { type: "text/plain" }),
-        ),
-        download: filename,
+    const piecesToExport =
+        lastResult?.pieces && lastResult.pieces.length > 1
+            ? lastResult.pieces.map((p, idx) => ({
+                  path: p.path,
+                  suffix: `_piece${idx + 1}`,
+              }))
+            : [{ path: pathWaypoints, suffix: "" }];
+
+    piecesToExport.forEach((piece, idx) => {
+        if (!piece.path || piece.path.length === 0) return;
+        const [hLat, hLon] = piece.path[0];
+        const lines = [
+            "QGC WPL 110",
+            `0\t1\t0\t16\t0\t0\t0\t0\t${hLat.toFixed(7)}\t${hLon.toFixed(7)}\t${altitudeM.toFixed(6)}\t1`,
+            ...piece.path.map(
+                ([lat, lon], i) =>
+                    `${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${lat.toFixed(7)}\t${lon.toFixed(7)}\t${altitudeM.toFixed(6)}\t1`,
+            ),
+        ];
+        const filename = (() => {
+            if (zones.perimeter?.name) {
+                const rawName = zones.perimeter.name;
+                const lastDotIdx = rawName.lastIndexOf(".");
+                const basename =
+                    lastDotIdx !== -1
+                        ? rawName.substring(0, lastDotIdx)
+                        : rawName;
+                return `yp_${basename}${piece.suffix}.waypoints`;
+            }
+            return `yardpilot${piece.suffix}.waypoints`;
+        })();
+
+        const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = Object.assign(document.createElement("a"), {
+            href: url,
+            download: filename,
+        });
+        setTimeout(() => {
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+        }, idx * 250);
     });
-    a.click();
-    URL.revokeObjectURL(a.href);
 });
 
 // Load persisted settings and zones on start
