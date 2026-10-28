@@ -15,3 +15,13 @@ jobs:
           node-version: "22"
       - name: Biome check
         run: npx --yes @biomejs/biome@2.4.16 check .
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Run fixed scenarios
+        run: npm test
+      - name: Run fixed scenarios (offline fallback)
+        run: npm run test:noclipper
+      - name: Run fuzz suite (150 cases)
+        run: npm run test:fuzz
+      - name: Run fuzz suite (150 cases, offline fallback)
+        run: npm run test:fuzz:noclipper
