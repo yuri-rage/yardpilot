@@ -1,6 +1,6 @@
 {
     "name": "yardpilot",
-    "version": "0.3.0-beta",
+    "version": "0.4.0-beta",
     "description": "YardPilot: Autonomous lawn mower coverage path planner",
     "scripts": {
         "test": "node tests/review-harness.js && node tests/macro-harness.js",
