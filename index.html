@@ -434,6 +434,72 @@
                                 </svg>
                                 Export Waypoints
                             </button>
+                            <button
+                                class="btn btn-secondary btn-macro"
+                                id="btn-macro"
+                                type="button"
+                                title="Edit mission macro"
+                            >
+                                <svg
+                                    class="btn-icon"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    <title>Macro icon</title>
+                                    <line
+                                        x1="9"
+                                        y1="6"
+                                        x2="20"
+                                        y2="6"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                    />
+                                    <line
+                                        x1="9"
+                                        y1="12"
+                                        x2="20"
+                                        y2="12"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                    />
+                                    <line
+                                        x1="9"
+                                        y1="18"
+                                        x2="20"
+                                        y2="18"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                    />
+                                    <polyline
+                                        points="3.5 6 4.5 7 6.5 5"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                    <polyline
+                                        points="3.5 12 4.5 13 6.5 11"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                    <polyline
+                                        points="3.5 18 4.5 19 6.5 17"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                </svg>
+                                <span id="btn-macro-label" class="btn-macro-label"
+                                    >Macro: Off</span
+                                >
+                            </button>
                         </div>
                     </section>
                 </div>
@@ -684,13 +750,138 @@
                         QGC-compliant <code>.waypoints</code> file directly to
                         your device.
                     </p>
+
+                    <h4>4. Mission Macros</h4>
+                    <p>
+                        Click <strong>Macro</strong> to add auxiliary commands (servo,
+                        relay, speed, delay, etc.) before or after specific
+                        path waypoints. Use <code>Last</code> as the waypoint
+                        index to target the end of any path, and
+                        <strong>Then</strong> to chain commands sequentially after the task
+                        above. Note that moving a <strong>Then</strong> task across anchor
+                        boundaries automatically converts it into an explicit Before/After
+                        command so its target waypoint doesn't silently change.
+                    </p>
+                    <p>
+                        In ArduPilot, auxiliary DO commands run as soon as the
+                        preceding NAV waypoint completes; to trigger an action just before
+                        arriving at a waypoint, use a preceding <code>CONDITION_DISTANCE</code>
+                        command.
+                    </p>
+                    <p>
+                        Macros can be saved to and loaded from <code>.json</code> files.
+                    </p>
                 </div>
             </div>
         </div>
 
+        <!-- Macro Modal -->
+        <div id="macro-modal" class="modal-overlay">
+            <div class="modal-content macro-modal-content" id="macro-dropzone">
+                <div class="modal-header">
+                    <div class="modal-title-group">
+                        <h3>Mission Macro</h3>
+                        <span class="modal-subtitle">Drag and drop a macro .json file anywhere here to load</span>
+                    </div>
+                    <button
+                        id="btn-close-macro"
+                        class="btn-close"
+                        title="Close"
+                        type="button"
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                        >
+                            <title>Close icon</title>
+                            <line
+                                x1="18"
+                                y1="6"
+                                x2="6"
+                                y2="18"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                            />
+                            <line
+                                x1="6"
+                                y1="6"
+                                x2="18"
+                                y2="18"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                            />
+                        </svg>
+                    </button>
+                </div>
+                <div class="macro-meta">
+                    <label class="macro-field macro-field-name">
+                        <span>Name</span>
+                        <input
+                            id="macro-name"
+                            type="text"
+                            placeholder="e.g. Mower PTO"
+                            maxlength="60"
+                        />
+                    </label>
+                    <label class="macro-field">
+                        <span>Vehicle</span>
+                        <select id="macro-vehicle"></select>
+                    </label>
+                    <label class="macro-enable">
+                        <input id="macro-enabled" type="checkbox" />
+                        <span>Enable macro on export</span>
+                    </label>
+                </div>
+                <div class="modal-body macro-body">
+                    <div id="macro-task-list" class="macro-task-list"></div>
+                    <div id="macro-empty" class="macro-empty">
+                        No tasks yet. Add a task, or drop a macro
+                        <code>.json</code> file here.
+                    </div>
+                    <button
+                        id="btn-macro-add"
+                        class="btn btn-secondary macro-add"
+                        type="button"
+                    >
+                        + Add Task
+                    </button>
+                    <div id="macro-issues" class="stats-warnings macro-issues"></div>
+                    <p class="macro-hint">
+                        Waypoint indices refer to the generated path (1&ndash;N)
+                        before macro items are inserted; <code>Last</code>
+                        targets the final waypoint. Split yards apply the macro
+                        to each piece. Lat/lon blank = current position (0 for ROI cancel);
+                        Alt blank = sidebar altitude.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button id="btn-macro-load" class="btn btn-secondary" type="button">
+                        Load JSON
+                    </button>
+                    <button id="btn-macro-save" class="btn btn-secondary" type="button">
+                        Save JSON
+                    </button>
+                    <button id="btn-macro-clear" class="btn btn-secondary" type="button">
+                        Clear
+                    </button>
+                    <button id="btn-macro-done" class="btn btn-secondary" type="button">
+                        Close
+                    </button>
+                </div>
+                <div class="macro-drop-overlay">Drop macro .json to load</div>
+            </div>
+        </div>
+        <datalist id="macro-index-options">
+            <option value="Last"></option>
+        </datalist>
+
         <script src="https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/clipper.min.js"></script>
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <script src="assets/planner.js"></script>
+        <script src="assets/macros.js"></script>
         <script src="assets/app.js"></script>
     </body>
 </html>

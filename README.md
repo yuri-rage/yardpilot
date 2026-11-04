@@ -10,6 +10,7 @@ While the core trajectory planning math is completely self-contained and runs of
 *   **Optimal Sweep Planning**: Computes mathematically optimal boustrophedon sweep angles based on the Minimum Bounding Box (MBB) of the field's convex hull to minimize turns (can be manually overridden).
 *   **Multi-Pass Perimeter Laps**: Generates nested outer boundary passes with smooth spiral transitions.
 *   **Collision-Free Routing**: Integrates a Delaunay-Voronoi roadmap and Dijkstra shortest-path search to route transit legs around exclusion zones.
+*   **Mission Macros**: Augments exported missions with vehicle-specific commands (servo, relay, speed, delay, etc.) inserted before or after target waypoints.
 
 ### OFFLINE LOCAL USE
 
