@@ -1,5 +1,15 @@
 # Release Notes
 
+## v0.4.0-beta
+
+- app: add mission macro modal and engine for prepending, inserting, and appending vehicle commands
+- app: support ArduPilot Rover, Copter, and Plane command sets with unit-converted parameters
+- app: support Before, After, and sequential Then positioning relative to waypoint indices and Last
+- app: preserve macro task anchors on reorder or deletion without re-attaching Then chains
+- app: support drag-and-drop JSON import and export for mission macros with localStorage persistence
+- app: integrate macro commands into waypoint export and statistics panel warnings
+- tests: add automated test harness covering macro validation, ordering, and expansion
+
 ## v0.3.0-beta
 
 - planner: route around merged obstacle outlines to prevent boundary and buffer intrusions
