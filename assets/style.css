@@ -848,6 +848,18 @@ body {
     -webkit-text-fill-color: transparent;
 }
 
+.modal-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.modal-subtitle {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
 .btn-close {
     background: transparent;
     border: none;
@@ -939,4 +951,303 @@ body {
 
 .modal-body::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
+}
+
+/* ── Macro button & modal ────────────────────────────── */
+
+.btn-macro {
+    padding: 8px 16px;
+    min-width: 0;
+}
+
+.btn-macro-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.btn-macro.active {
+    border-color: var(--border-hover);
+    color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.macro-modal-content {
+    position: relative;
+    max-width: 780px;
+    max-height: 88vh;
+}
+
+.macro-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px 16px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+}
+
+.macro-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.macro-field-name {
+    flex: 1;
+    min-width: 180px;
+}
+
+.macro-modal-content input[type="text"],
+.macro-modal-content input[type="number"],
+.macro-modal-content select {
+    background: rgba(13, 15, 24, 0.9);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 5px 8px;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 13px;
+    outline: none;
+    transition: var(--transition-smooth);
+    min-width: 0;
+}
+
+.macro-modal-content input:focus,
+.macro-modal-content select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.macro-modal-content select {
+    cursor: pointer;
+}
+
+.macro-enable {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.macro-enable input {
+    accent-color: var(--accent);
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+}
+
+.macro-body {
+    padding: 14px 24px;
+    flex: 1;
+}
+
+.macro-task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.macro-task {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 10px;
+    transition:
+        border-color 0.3s,
+        background 0.3s;
+}
+
+.macro-task.has-warn {
+    border-color: rgba(234, 179, 8, 0.5);
+}
+
+.macro-task.has-error {
+    border-color: rgba(239, 68, 68, 0.6);
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.macro-task.is-unselected {
+    border-color: var(--border-hover);
+    background: var(--bg-elevated);
+}
+
+.macro-task.flash {
+    border-color: var(--accent-cyan);
+    background: rgba(6, 182, 212, 0.12);
+}
+
+.macro-task-main {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.macro-task-num {
+    width: 18px;
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-align: right;
+}
+
+.macro-pos {
+    width: 82px;
+    flex-shrink: 0;
+}
+
+.macro-index {
+    width: 64px;
+    flex-shrink: 0;
+    text-align: right;
+}
+
+.macro-index.is-hidden {
+    visibility: hidden;
+}
+
+.macro-cmd {
+    flex: 1;
+}
+
+.macro-actions {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.macro-action {
+    width: 26px;
+    height: 26px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.macro-action:hover:not(:disabled) {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.macro-action-delete:hover:not(:disabled) {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.macro-action:disabled {
+    opacity: 0.25;
+    cursor: default;
+}
+
+.macro-task-params {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    margin: 8px 0 0 24px;
+}
+
+.macro-param {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.macro-param input[type="number"] {
+    width: 96px;
+    text-align: right;
+}
+
+.macro-param input.macro-param-wide {
+    width: 120px;
+}
+
+.macro-task-issue {
+    margin: 4px 0 0 24px;
+    font-size: 11.5px;
+    color: #fca5a5;
+}
+
+.macro-task-issue:empty {
+    display: none;
+}
+
+.macro-task.has-warn .macro-task-issue {
+    color: #fde047;
+}
+
+.macro-task.is-unselected .macro-task-issue {
+    color: var(--text-muted);
+}
+
+.macro-empty {
+    padding: 20px;
+    text-align: center;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    color: var(--text-muted);
+}
+
+.macro-add {
+    margin-top: 10px;
+    padding: 8px 16px;
+}
+
+.macro-issues {
+    display: none;
+}
+
+.macro-hint {
+    margin-top: 12px;
+    margin-bottom: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.modal-footer {
+    display: flex;
+    gap: 8px;
+    padding: 14px 24px;
+    border-top: 1px solid var(--border);
+}
+
+.modal-footer .btn {
+    padding: 8px 12px;
+}
+
+.macro-drop-overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border: 2px dashed var(--accent);
+    border-radius: 16px;
+    background: rgba(16, 185, 129, 0.12);
+    color: var(--accent);
+    font-size: 16px;
+    font-weight: 600;
+    pointer-events: none;
+}
+
+.macro-modal-content.drag-over .macro-drop-overlay {
+    display: flex;
 }

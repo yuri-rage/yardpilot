@@ -3,7 +3,8 @@
     "version": "0.3.0-beta",
     "description": "YardPilot: Autonomous lawn mower coverage path planner",
     "scripts": {
-        "test": "node tests/review-harness.js",
+        "test": "node tests/review-harness.js && node tests/macro-harness.js",
+        "test:macro": "node tests/macro-harness.js",
         "test:noclipper": "node tests/review-harness.js --noclipper",
         "test:fuzz30": "node tests/review-harness.js --fuzz=30",
         "test:fuzz30:noclipper": "node tests/review-harness.js --noclipper --fuzz=30",

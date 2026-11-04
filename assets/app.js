@@ -446,6 +446,7 @@ document.getElementById("units-metric").addEventListener("click", () => {
     applyUnitsToInputs(snap);
     saveSettings();
     if (lastResult) displayStats(lastResult);
+    renderMacroModal();
 });
 
 document.getElementById("units-imperial").addEventListener("click", () => {
@@ -458,6 +459,7 @@ document.getElementById("units-imperial").addEventListener("click", () => {
     applyUnitsToInputs(snap);
     saveSettings();
     if (lastResult) displayStats(lastResult);
+    renderMacroModal();
 });
 
 // ── Zone state ────────────────────────────────────────────
@@ -833,9 +835,11 @@ function displayStats(result) {
 
     const areaSqM = result.coveredAreaAllSqM || result.coveredAreaSqM;
     const totalDistM = result.totalDistAllM || result.totalDistM;
-    const totalCount = result.pieces
-        ? result.pieces.reduce((s, p) => s + p.count, 0)
-        : result.count;
+    const macroInfo = analyzeMacro();
+    const totalCount =
+        (result.pieces
+            ? result.pieces.reduce((s, p) => s + p.count, 0)
+            : result.count) + (macroInfo.enabled ? macroInfo.count : 0);
     const sweepDistM = result.sweepDistAllM || result.sweepDistM;
     // Speed is always read back as metric from storage
     const speedMS = getStoredMetricValue("input-target-speed") || 1.5;
@@ -922,6 +926,7 @@ function displayStats(result) {
                 `Split yard: ${result.pieces.length} disconnected pieces planned. Export will generate separate missions for each piece.`,
             );
         }
+        if (macroInfo.enabled) displayWarnings.push(...macroInfo.messages);
         if (displayWarnings.length > 0) {
             warningsEl.replaceChildren(
                 ...displayWarnings.map((w) => {
@@ -1076,26 +1081,11 @@ document.getElementById("btn-export").addEventListener("click", () => {
     if (!pathWaypoints) return;
     // Altitude is always exported in meters — convert from display unit to metric
     const altitudeM = getMetricValue("input-altitude") || 0.0;
+    const macro = activeMacro();
 
-    const piecesToExport =
-        lastResult?.pieces && lastResult.pieces.length > 1
-            ? lastResult.pieces.map((p, idx) => ({
-                  path: p.path,
-                  suffix: `_piece${idx + 1}`,
-              }))
-            : [{ path: pathWaypoints, suffix: "" }];
-
-    piecesToExport.forEach((piece, idx) => {
+    getPathPieces().forEach((piece, idx) => {
         if (!piece.path || piece.path.length === 0) return;
-        const [hLat, hLon] = piece.path[0];
-        const lines = [
-            "QGC WPL 110",
-            `0\t1\t0\t16\t0\t0\t0\t0\t${hLat.toFixed(7)}\t${hLon.toFixed(7)}\t${altitudeM.toFixed(6)}\t1`,
-            ...piece.path.map(
-                ([lat, lon], i) =>
-                    `${i + 1}\t0\t3\t16\t0\t0\t0\t0\t${lat.toFixed(7)}\t${lon.toFixed(7)}\t${altitudeM.toFixed(6)}\t1`,
-            ),
-        ];
+        const { lines } = buildMissionLines(piece.path, macro, altitudeM);
         const filename = (() => {
             if (zones.perimeter?.name) {
                 const rawName = zones.perimeter.name;
@@ -1121,6 +1111,631 @@ document.getElementById("btn-export").addEventListener("click", () => {
         }, idx * 250);
     });
 });
+
+// ── Mission macro ─────────────────────────────────────────
+// Command tables, validation, and mission expansion live in macros.js.
+// Macro params are stored in METRIC; dist/alt/speed fields are converted for display.
+
+const MACRO_STORAGE_KEY = "yardpilot_macro";
+const macroState = { macro: macroEmpty("rover"), enabled: false };
+
+const macroModal = document.getElementById("macro-modal");
+const macroDropzone = document.getElementById("macro-dropzone");
+const macroNameInput = document.getElementById("macro-name");
+const macroVehicleSelect = document.getElementById("macro-vehicle");
+const macroEnabledInput = document.getElementById("macro-enabled");
+const macroTaskList = document.getElementById("macro-task-list");
+
+function loadMacro() {
+    const data = localStorage.getItem(MACRO_STORAGE_KEY);
+    if (!data) return;
+    try {
+        const obj = JSON.parse(data);
+        macroState.macro = parseMacroJson(obj);
+        macroState.enabled = !!obj.enabled;
+    } catch (e) {
+        console.error("Failed to load macro", e);
+    }
+}
+
+function saveMacro() {
+    localStorage.setItem(
+        MACRO_STORAGE_KEY,
+        JSON.stringify({
+            ...macroToJson(macroState.macro),
+            enabled: macroState.enabled,
+        }),
+    );
+}
+
+// The macro applied on export, or null when disabled/empty
+function activeMacro() {
+    return macroState.enabled && macroState.macro.tasks.length
+        ? macroState.macro
+        : null;
+}
+
+// Paths that will be exported (one per disconnected piece)
+function getPathPieces() {
+    if (!pathWaypoints) return [];
+    return lastResult?.pieces && lastResult.pieces.length > 1
+        ? lastResult.pieces.map((p, idx) => ({
+              path: p.path,
+              suffix: `_piece${idx + 1}`,
+              label: `piece ${idx + 1}`,
+          }))
+        : [{ path: pathWaypoints, suffix: "", label: "" }];
+}
+
+// Validate the macro and dry-run it against the current path pieces.
+// Returns { enabled, count, messages, rows: Map(taskIdx → { level, messages }) }
+function analyzeMacro() {
+    const macro = macroState.macro;
+    const rows = new Map();
+    const messages = [];
+    const label = (i) =>
+        `Macro task ${i + 1} (${macroCommandName(macro.tasks[i].command)})`;
+    const flag = (task, level, msg) => {
+        const r = rows.get(task) || { level, messages: [] };
+        if (level === "error") r.level = "error";
+        r.messages.push(msg);
+        rows.set(task, r);
+        const prefix = level === "error" ? "Skipped" : "Check";
+        messages.push(`${label(task)} (${prefix}): ${msg}`);
+    };
+    for (const issue of validateMacro(macro)) {
+        flag(issue.task, "error", issue.message);
+    }
+    // Check if any "then" task has an anchor row that is invalid or skipped
+    const anchors = macroResolveAnchors(macro.tasks);
+    macro.tasks.forEach((t, i) => {
+        if (t.position === "then") {
+            const anchorIdx = macro.tasks.findIndex(
+                (other, idx) =>
+                    idx < i &&
+                    anchors[idx] === anchors[i] &&
+                    other.position !== "then",
+            );
+            if (anchorIdx !== -1 && rows.get(anchorIdx)?.level === "error") {
+                const anchorCmd = macroCommandName(
+                    macro.tasks[anchorIdx].command,
+                );
+                flag(
+                    i,
+                    "warn",
+                    `preceding task ${anchorIdx + 1} (${anchorCmd}) has an error`,
+                );
+            }
+        }
+    });
+    let count = 0;
+    for (const piece of getPathPieces()) {
+        if (!piece.path?.length) continue;
+        const r = buildMissionLines(piece.path, macro, 0);
+        count += r.macroCount;
+        for (const issue of r.rangeIssues) {
+            flag(
+                issue.task,
+                "warn",
+                piece.label
+                    ? `${issue.message} (${piece.label})`
+                    : issue.message,
+            );
+        }
+    }
+    return { enabled: !!activeMacro(), count, messages, rows };
+}
+
+// ── Unit helpers for macro fields ──
+
+const MACRO_UNIT_TYPES = { dist: "length", alt: "length", speed: "speed" };
+
+function macroUnitLabel(unit) {
+    if (unit === "dist" || unit === "alt") return isImperial() ? "ft" : "m";
+    if (unit === "speed") return isImperial() ? "mph" : "m/s";
+    return unit;
+}
+
+function macroValueToDisplay(val, unit) {
+    if (val === null || val === undefined) return "";
+    const type = MACRO_UNIT_TYPES[unit];
+    const disp = type ? toDisplay(val, type) : val;
+    return String(Number(Number(disp).toFixed(7)));
+}
+
+function macroValueFromDisplay(text, unit) {
+    if (text.trim() === "") return null;
+    const num = Number.parseFloat(text);
+    if (!Number.isFinite(num)) return null;
+    const type = MACRO_UNIT_TYPES[unit];
+    return type ? toMetric(num, type) : num;
+}
+
+// ── Rendering ──
+
+function macroEl(tag, props = {}, children = []) {
+    const node = Object.assign(document.createElement(tag), props);
+    for (const c of children) node.append(c);
+    return node;
+}
+
+function updateMacroButton() {
+    const { macro, enabled } = macroState;
+    const name = macro.name.trim() || "Unnamed";
+    const label = enabled ? `Macro: ${name}` : "Macro: Off";
+    document.getElementById("btn-macro-label").textContent = label;
+    const btn = document.getElementById("btn-macro");
+    btn.classList.toggle("active", enabled);
+    btn.title = enabled
+        ? `Macro "${name}" (${macro.tasks.length} tasks) will be applied on export`
+        : "Edit mission macro (not applied on export)";
+}
+
+function buildCommandSelect(task) {
+    const select = macroEl("select", { className: "macro-cmd" });
+    const placeholder = macroEl("option", {
+        value: "",
+        textContent: "Select command...",
+        disabled: true,
+        selected: !task.command,
+    });
+    select.append(placeholder);
+
+    const groups = macroCommandsForVehicle(macroState.macro.vehicle);
+    const groupLabels = {
+        NAV: "Navigation",
+        CONDITION: "Conditions",
+        DO: "DO Commands",
+    };
+    let found = !task.command;
+    for (const [key, cmds] of Object.entries(groups)) {
+        if (!cmds.length) continue;
+        const og = macroEl("optgroup", { label: groupLabels[key] });
+        for (const c of cmds) {
+            if (c.id === task.command) found = true;
+            og.append(
+                macroEl("option", {
+                    value: String(c.id),
+                    textContent: c.name,
+                    title: c.desc,
+                }),
+            );
+        }
+        select.append(og);
+    }
+    if (!found) {
+        // Keep unsupported/unknown commands visible so the row can be fixed
+        select.prepend(
+            macroEl("optgroup", { label: "Unsupported" }, [
+                macroEl("option", {
+                    value: String(task.command),
+                    textContent: macroCommandName(task.command),
+                }),
+            ]),
+        );
+    }
+    select.value = task.command ? String(task.command) : "";
+    select.title = task.command
+        ? MACRO_COMMANDS[task.command]?.desc || "Unsupported command"
+        : "Select a command";
+    return select;
+}
+
+function buildTaskRow(task, i) {
+    const tasks = macroState.macro.tasks;
+    const row = macroEl("div", { className: "macro-task" });
+    row.dataset.idx = String(i);
+
+    // Line 1: position, index, command, actions
+    const pos = macroEl("select", { className: "macro-pos" });
+    for (const [value, text] of [
+        ["before", "Before"],
+        ["after", "After"],
+        ["then", "Then"],
+    ]) {
+        pos.append(
+            macroEl("option", {
+                value,
+                textContent: text,
+                disabled: value === "then" && i === 0,
+            }),
+        );
+    }
+    pos.value = task.position;
+    pos.addEventListener("change", () => {
+        if (pos.value !== "then" && macroParseIndex(task.index) === null) {
+            const anchor = macroResolveAnchors(tasks)[i];
+            task.index = anchor ? anchor.index : 1;
+        }
+        task.position = pos.value;
+        onMacroChanged(true);
+    });
+
+    const index = macroEl("input", {
+        className: "macro-index",
+        type: "text",
+        placeholder: "WP #",
+        title: "Path waypoint number (1–N) or 'Last'",
+        value:
+            task.index === "last"
+                ? "Last"
+                : task.index === null
+                  ? ""
+                  : String(task.index),
+    });
+    index.setAttribute("list", "macro-index-options");
+    if (task.position === "then") index.classList.add("is-hidden");
+    index.addEventListener("input", () => {
+        const parsed = macroParseIndex(index.value);
+        task.index = parsed === null ? index.value : parsed;
+        onMacroChanged();
+    });
+
+    const cmd = buildCommandSelect(task);
+    cmd.addEventListener("change", () => {
+        const id = Number(cmd.value);
+        task.command = id;
+        task.params = macroDefaultParams(id);
+        onMacroChanged(true);
+    });
+
+    const actionBtn = (text, title, disabled, onClick) => {
+        const b = macroEl("button", {
+            type: "button",
+            className: "macro-action",
+            textContent: text,
+            title,
+            disabled,
+        });
+        b.addEventListener("click", onClick);
+        return b;
+    };
+    const actions = macroEl("div", { className: "macro-actions" }, [
+        actionBtn("↑", "Move up", i === 0, () => moveMacroTask(i, -1)),
+        actionBtn("↓", "Move down", i === tasks.length - 1, () =>
+            moveMacroTask(i, 1),
+        ),
+        actionBtn("✕", "Delete task", false, () => deleteMacroTask(i)),
+    ]);
+    actions.lastChild.classList.add("macro-action-delete");
+
+    row.append(
+        macroEl("div", { className: "macro-task-main" }, [
+            macroEl("span", {
+                className: "macro-task-num",
+                textContent: String(i + 1),
+            }),
+            pos,
+            index,
+            cmd,
+            actions,
+        ]),
+    );
+
+    // Line 2: params used by this command
+    const fields = macroCommandFields(task.command);
+    if (fields.length) {
+        const params = macroEl("div", { className: "macro-task-params" });
+        for (const f of fields) {
+            const unit = macroUnitLabel(f.unit);
+            const input = macroEl("input", {
+                type: "number",
+                step: "any",
+                value: macroValueToDisplay(task.params[f.i - 1], f.unit),
+                placeholder:
+                    f.placeholder ||
+                    (f.kind === "alt"
+                        ? "sidebar"
+                        : f.kind === "lat" || f.kind === "lon"
+                          ? "current"
+                          : "0"),
+            });
+            if (f.kind === "lat" || f.kind === "lon") {
+                input.classList.add("macro-param-wide");
+            }
+            input.addEventListener("input", () => {
+                task.params[f.i - 1] = macroValueFromDisplay(
+                    input.value,
+                    f.unit,
+                );
+                onMacroChanged();
+            });
+            params.append(
+                macroEl("label", { className: "macro-param" }, [
+                    macroEl("span", {
+                        textContent: unit ? `${f.label} (${unit})` : f.label,
+                    }),
+                    input,
+                ]),
+            );
+        }
+        row.append(params);
+    }
+
+    row.append(macroEl("div", { className: "macro-task-issue" }));
+    return row;
+}
+
+function renderMacroTasks() {
+    const { tasks } = macroState.macro;
+    macroTaskList.replaceChildren(...tasks.map((t, i) => buildTaskRow(t, i)));
+    document.getElementById("macro-empty").style.display = tasks.length
+        ? "none"
+        : "block";
+    refreshMacroFlags();
+}
+
+function renderMacroModal() {
+    if (!macroVehicleSelect.options.length) {
+        for (const [value, text] of Object.entries(MACRO_VEHICLES)) {
+            macroVehicleSelect.append(
+                macroEl("option", { value, textContent: text }),
+            );
+        }
+    }
+    macroNameInput.value = macroState.macro.name;
+    macroVehicleSelect.value = macroState.macro.vehicle;
+    macroEnabledInput.checked = macroState.enabled;
+    renderMacroTasks();
+    updateMacroButton();
+}
+
+// Update row error/warning flags and the issue list without re-rendering inputs
+function refreshMacroFlags() {
+    const info = analyzeMacro();
+    for (const row of macroTaskList.children) {
+        const idx = Number(row.dataset.idx);
+        const r = info.rows.get(idx);
+        const task = macroState.macro.tasks[idx];
+        const isUnselected = !task?.command;
+
+        row.classList.toggle(
+            "has-error",
+            r?.level === "error" && !isUnselected,
+        );
+        row.classList.toggle("has-warn", r?.level === "warn");
+        row.classList.toggle("is-unselected", isUnselected);
+
+        if (isUnselected) {
+            row.querySelector(".macro-task-issue").textContent =
+                "Choose a command for this task";
+        } else if (r) {
+            const prefix = r.level === "error" ? "Skipped" : "Check";
+            row.querySelector(".macro-task-issue").textContent =
+                `⚠️ ${prefix}: ${r.messages.join("; ")}`;
+        } else {
+            row.querySelector(".macro-task-issue").textContent = "";
+        }
+    }
+    const issuesEl = document.getElementById("macro-issues");
+    issuesEl.replaceChildren(
+        ...info.messages.map((m) =>
+            macroEl("div", {
+                className: "warning-item",
+                textContent: `⚠️ ${m}`,
+            }),
+        ),
+    );
+    issuesEl.style.display = info.messages.length ? "block" : "none";
+}
+
+function onMacroChanged(rerender = false) {
+    saveMacro();
+    updateMacroButton();
+    if (rerender) renderMacroTasks();
+    else refreshMacroFlags();
+    if (lastResult) displayStats(lastResult);
+}
+
+// ── Task list operations ──
+
+// Run a structural edit; if any "Then" row's resolved anchor changed because
+// an anchor row above it was removed or moved, convert that "Then" row into
+// an explicit anchor with the slot it had before the edit (so its emitted
+// position never silently shifts to a different waypoint).
+function editMacroTasks(fn) {
+    const tasks = macroState.macro.tasks;
+    const oldAnchors = macroResolveAnchors(tasks);
+    const prevAnchorMap = new Map(tasks.map((t, i) => [t, oldAnchors[i]]));
+    fn(tasks);
+    const newAnchors = macroResolveAnchors(tasks);
+    const convertedIndices = [];
+
+    for (let i = 0; i < tasks.length; i++) {
+        const t = tasks[i];
+        if (t.position !== "then") continue;
+        const oldA = prevAnchorMap.get(t);
+        const newA = newAnchors[i];
+        // If it's now row 0, or its anchor changed/became null:
+        const anchorChanged =
+            !newA ||
+            !oldA ||
+            newA.position !== oldA.position ||
+            newA.index !== oldA.index;
+        if (anchorChanged) {
+            const fallback = oldA || { position: "after", index: 1 };
+            t.position = fallback.position;
+            t.index = fallback.index;
+            convertedIndices.push(i);
+            // Re-resolve following anchors since t is now an explicit anchor
+            const refreshed = macroResolveAnchors(tasks);
+            for (let k = i; k < tasks.length; k++) newAnchors[k] = refreshed[k];
+        }
+    }
+
+    onMacroChanged(true);
+    for (const idx of convertedIndices) {
+        const row = macroTaskList.children[idx];
+        row?.classList.add("flash");
+        setTimeout(() => row?.classList.remove("flash"), 1200);
+    }
+}
+
+function moveMacroTask(i, delta) {
+    const j = i + delta;
+    editMacroTasks((tasks) => {
+        if (j < 0 || j >= tasks.length) return;
+        [tasks[i], tasks[j]] = [tasks[j], tasks[i]];
+    });
+}
+
+function deleteMacroTask(i) {
+    editMacroTasks((tasks) => tasks.splice(i, 1));
+}
+
+document.getElementById("btn-macro-add").addEventListener("click", () => {
+    const tasks = macroState.macro.tasks;
+    tasks.push(
+        tasks.length
+            ? macroNewTask(null, "then", null)
+            : macroNewTask(null, "before", 1),
+    );
+    onMacroChanged(true);
+    macroTaskList.lastElementChild?.scrollIntoView({ block: "nearest" });
+});
+
+macroNameInput.addEventListener("input", () => {
+    macroState.macro.name = macroNameInput.value;
+    onMacroChanged();
+});
+
+macroVehicleSelect.addEventListener("change", () => {
+    macroState.macro.vehicle = macroVehicleSelect.value;
+    onMacroChanged(true);
+});
+
+macroEnabledInput.addEventListener("change", () => {
+    macroState.enabled = macroEnabledInput.checked;
+    onMacroChanged();
+});
+
+// ── File operations ──
+
+function handleMacroFile(file) {
+    const reader = new FileReader();
+    reader.onload = ({ target: { result: text } }) => {
+        let loaded;
+        try {
+            loaded = parseMacroJson(text);
+        } catch (e) {
+            alert(`Could not load macro: ${e.message}`);
+            return;
+        }
+        if (
+            macroState.macro.tasks.length &&
+            !confirm(
+                `Replace the current macro with "${loaded.name || file.name}"?`,
+            )
+        ) {
+            return;
+        }
+        macroState.macro = loaded;
+        renderMacroModal();
+        onMacroChanged();
+    };
+    reader.readAsText(file);
+}
+
+const macroFileInput = Object.assign(document.createElement("input"), {
+    type: "file",
+    accept: ".json,application/json",
+});
+macroFileInput.style.display = "none";
+document.body.appendChild(macroFileInput);
+macroFileInput.addEventListener("change", () => {
+    const file = macroFileInput.files[0];
+    if (file) handleMacroFile(file);
+    macroFileInput.value = "";
+});
+
+document
+    .getElementById("btn-macro-load")
+    .addEventListener("click", () => macroFileInput.click());
+
+document.getElementById("btn-macro-save").addEventListener("click", () => {
+    const json = JSON.stringify(macroToJson(macroState.macro), null, 4);
+    const slug = macroState.macro.name
+        .trim()
+        .replace(/[^\w-]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement("a"), {
+        href: url,
+        download: `${slug || "yardpilot_macro"}.json`,
+    });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+});
+
+document.getElementById("btn-macro-clear").addEventListener("click", () => {
+    const { macro } = macroState;
+    if (
+        (macro.tasks.length || macro.name) &&
+        !confirm("Clear the macro name and all tasks?")
+    ) {
+        return;
+    }
+    macroState.macro = macroEmpty(macro.vehicle);
+    renderMacroModal();
+    onMacroChanged();
+});
+
+// Drag-and-drop JSON onto the modal (overlay or content)
+macroModal.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    macroDropzone.classList.add("drag-over");
+});
+macroModal.addEventListener("dragleave", (e) => {
+    if (!macroModal.contains(e.relatedTarget)) {
+        macroDropzone.classList.remove("drag-over");
+    }
+});
+macroModal.addEventListener("drop", (e) => {
+    e.preventDefault();
+    macroDropzone.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file) handleMacroFile(file);
+});
+
+// Prevent browser from opening dragged files dropped outside active drop zones
+window.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    if (!e.target.closest("#macro-modal") && !e.target.closest(".drop-zone")) {
+        e.dataTransfer.dropEffect = "none";
+    }
+});
+window.addEventListener("drop", (e) => {
+    e.preventDefault();
+});
+
+// ── Modal open/close ──
+
+function closeMacroModal() {
+    macroModal.classList.remove("active");
+}
+
+document.getElementById("btn-macro").addEventListener("click", () => {
+    renderMacroModal();
+    macroModal.classList.add("active");
+});
+document
+    .getElementById("btn-close-macro")
+    .addEventListener("click", closeMacroModal);
+document
+    .getElementById("btn-macro-done")
+    .addEventListener("click", closeMacroModal);
+macroModal.addEventListener("click", (e) => {
+    if (e.target === macroModal) closeMacroModal();
+});
+window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && macroModal.classList.contains("active")) {
+        closeMacroModal();
+    }
+});
+
+loadMacro();
+updateMacroButton();
 
 // Load persisted settings and zones on start
 loadSettings();
